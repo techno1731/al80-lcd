@@ -9,6 +9,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | Modes | Stock Fn layer restored in Windows/Linux mode: media row, GUI lock, factory reset (hold), side bar brightness | yes | no |
 | Flashing | Bootloader entry from a held key (Fn + Right Shift, 3 s) and, in development builds, over raw HID | yes | no |
 | Boot | Stored settings from another firmware are reset once on first boot | yes | yes, 9 Oct 2026 |
+| Hubs | Enumerates and flashes through a monitor KVM hub (BenQ RD28UG) | yes | yes, build 2 on 9 Oct 2026 |
 | Mac | Fn/Globe key reported over USB (Apple IDs, AppleVendor Top Case usage) | yes | no |
 | Mac | Fn is only reported when a host-visible key is pressed with it, so Fn + local keys is not a Globe tap | yes | no |
 | Mac | Function row and Fn navigation substituted in firmware over radio | yes | no |
