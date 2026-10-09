@@ -70,9 +70,35 @@ static uint16_t al80_adc_read(uint8_t channel) {
     return (uint16_t)(sum / 8);
 }
 
+/* Level shown on the LCD and reported to the host: the measurement, rate-limited. */
+static uint8_t al80_batt_shown = 100;
+
+/* History for the 0x4F diagnostic: one sample every five minutes, eight hours deep. It is
+ * how a discharge curve gets read back after a stretch on battery, when no cable was there
+ * to ask. RAM only. */
+#define AL80_BATT_LOG_LEN 96
+#define AL80_BATT_LOG_EVERY 30 /* samples: 30 x 10 s */
+typedef struct {
+    uint16_t raw;
+    uint16_t vref;
+    uint8_t  flags; /* bit0 plugged, bits1-2 status, bit7 valid */
+} al80_batt_log_t;
+static al80_batt_log_t al80_batt_log[AL80_BATT_LOG_LEN];
+static uint8_t         al80_batt_log_head = 0; /* next slot to write */
+static uint8_t         al80_batt_log_tick = AL80_BATT_LOG_EVERY - 1;
+
 static void al80_batt_sample(void) {
-    const uint16_t raw = al80_adc_read(9);
-    al80_batt          = al80_batt_eval(raw, al80_adc_read(17), readPin(AL80_PLUG_PIN));
+    static bool    first = true;
+    const uint16_t raw   = al80_adc_read(9);
+    const bool     plug  = readPin(AL80_PLUG_PIN);
+    al80_batt            = al80_batt_eval(raw, al80_adc_read(17), plug);
+    al80_batt_shown      = first ? al80_batt.pct : al80_batt_follow(al80_batt_shown, al80_batt.pct, al80_batt.status);
+    first                = false;
+    if (++al80_batt_log_tick >= AL80_BATT_LOG_EVERY) {
+        al80_batt_log_tick                    = 0;
+        al80_batt_log[al80_batt_log_head]     = (al80_batt_log_t){al80_batt.raw, al80_batt.vref, (uint8_t)(0x80 | (al80_batt.status << 1) | (plug ? 1 : 0))};
+        al80_batt_log_head                    = (uint8_t)((al80_batt_log_head + 1) % AL80_BATT_LOG_LEN);
+    }
 }
 
 /* CRC16-MODBUS (init 0xFFFF, poly 0xA001) — al80-studio's announce checksum "ga". */
@@ -133,7 +159,7 @@ static void al80_battery_push(void) {
     g_screen_busy = true;                             /* pause RGB SPI so the tiny packets don't jitter */
     al80_screen_send_u8(0x07, al80_batt.status);      /* PK_BATT_STATUS */
     wait_us(500);                                     /* let the module commit before the next packet */
-    al80_screen_send_u8(0x06, al80_batt.pct);         /* PK_BATT_QUANTITY */
+    al80_screen_send_u8(0x06, al80_batt_shown);       /* PK_BATT_QUANTITY */
     wait_us(500);
     g_screen_busy = false;
     screen_busy_wd = 0;
@@ -157,7 +183,7 @@ static void al80_homepage_init(void) {
     al80_screen_send_u8(0x04, leds & 1);        wait_us(500); /* PK_NUMLOCK_STATUS              */
     al80_screen_send_u8(0x05, keymap_config.no_gui ? 1 : 0); wait_us(500); /* PK_WINLOCK_STATUS    */
     al80_screen_send_u8(0x07, al80_batt.status);wait_us(500); /* PK_BATT_STATUS                 */
-    al80_screen_send_u8(0x06, al80_batt.pct);   wait_us(500); /* PK_BATT_QUANTITY               */
+    al80_screen_send_u8(0x06, al80_batt_shown); wait_us(500); /* PK_BATT_QUANTITY               */
     g_screen_busy = false;
     screen_busy_wd = 0;
 }
@@ -711,7 +737,22 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
             data[59] = al80_batt.status;
             data[60] = (uint8_t)((readPin(AL80_PLUG_PIN) ? 0x01 : 0) | (al80_idle ? 0x02 : 0));
             data[61] = AL80_FW_BUILD;
+            data[62] = al80_batt_shown;
             break;
+        /* [0x4F, first] -> [0x4F, first, head, then 12 x (rawHi, rawLo, vrefHi, vrefLo, flags)] */
+        case 0x4F: {
+            const uint8_t first = data[1];
+            data[2]             = al80_batt_log_head;
+            for (uint8_t i = 0; i < 12; i++) {
+                const al80_batt_log_t e = al80_batt_log[(uint8_t)((first + i) % AL80_BATT_LOG_LEN)];
+                data[3 + i * 5]         = (uint8_t)(e.raw >> 8);
+                data[4 + i * 5]         = (uint8_t)e.raw;
+                data[5 + i * 5]         = (uint8_t)(e.vref >> 8);
+                data[6 + i * 5]         = (uint8_t)e.vref;
+                data[7 + i * 5]         = e.flags;
+            }
+            break;
+        }
 #endif
 
 #if defined(AL80_DEV_HID_BOOT)
@@ -753,7 +794,7 @@ void housekeeping_task_kb(void) {
         static uint8_t radio_batt = 0;
         if (++radio_batt >= 6) {      /* once a minute is plenty for the host's battery widget */
             radio_batt = 0;
-            al80_wireless_battery_push(al80_batt.pct);
+            al80_wireless_battery_push(al80_batt_shown);
         }
 #endif
     }

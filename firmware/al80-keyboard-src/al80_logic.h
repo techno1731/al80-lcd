@@ -63,6 +63,16 @@ static inline al80_batt_t al80_batt_eval(uint16_t raw, uint16_t vref, bool plugg
     return b;
 }
 
+/* The level shown to the user. A cell under charge reads high and a cell under load reads
+ * low, so the raw percentage jumps when the cable goes in or out. The shown level follows
+ * the measurement one point at a time and only in the direction the cell can really move:
+ * up while charging, down while discharging. Call once per sample. */
+static inline uint8_t al80_batt_follow(uint8_t shown, uint8_t measured, uint8_t status) {
+    if (status == AL80_BATT_FULL) return 100;
+    if (status == AL80_BATT_CHARGING) return (measured > shown && shown < 100) ? (uint8_t)(shown + 1) : shown;
+    return (measured < shown && shown > 0) ? (uint8_t)(shown - 1) : shown;
+}
+
 /* ---- radio module status frames: 55 03 <cmd 0..2> <mode 0..4> <data> ---- */
 
 #define AL80_WL_SYNC 0x55

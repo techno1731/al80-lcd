@@ -15,7 +15,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | Mac | Function row and Fn navigation substituted in firmware over radio | yes | no |
 | Mac | Dictation, Do Not Disturb and Spotlight keycodes (CUSTOM 32-34) | yes | no |
 | Radio | Link status read as the vendor does (0 = up); upstream had it inverted | yes | yes: module reported link up on 2.4G, 9 Oct 2026 |
-| Radio | 2.4G dongle: typing works with the cable in, selected by key (owner confirmed 9 Oct 2026) | yes | yes, including with the cable out; media keys and host-less boot not yet confirmed |
+| Radio | 2.4G dongle: typing works with the cable in, selected by key (owner confirmed 9 Oct 2026) | yes | yes, including with the cable out and from a cold start on the switch (9 Oct 2026); media keys not yet confirmed |
 | Radio | Media and system keys sent to the module (`55 03 <id> <usage>`) | yes | no |
 | Radio | Mouse reports sent to the module | yes | no |
 | Radio | Lock LED state from the module drives Caps Lock indication | yes | no |
@@ -31,7 +31,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 
 - 2.4G with the cable out was dead on upstream. The switch read above is the first fix to try; the
   cause is not yet confirmed.
-- The battery gauge overstates the level while the cell is charging (read 97% on USB, 23% on battery a minute later). It needs charge-aware smoothing.
+- The battery reading jumps between charging and discharging (97% on USB, 23% on battery a minute later). Build 3 rate-limits the shown level and logs raw samples (0x4F) so the curve can be checked against real use.
 - The MCU does not enter stop mode, so battery life will still trail the stock firmware.
 - Reports are sent whether or not the module says the link is up (`AL80_WL_OPTIMISTIC`), until the
   corrected link status is confirmed on hardware.

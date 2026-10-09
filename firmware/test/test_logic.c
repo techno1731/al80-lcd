@@ -64,6 +64,22 @@ static void test_battery_eval(void) {
     CHECK(!b.valid && b.pct == 100 && b.status == AL80_BATT_DISCHARGING);
 }
 
+static void test_battery_follow(void) {
+    /* Plugging in makes the reading jump from 23 to 98: the shown level climbs a point per sample. */
+    uint8_t shown = 23;
+    shown = al80_batt_follow(shown, 98, AL80_BATT_CHARGING);
+    CHECK(shown == 24);
+    /* A charging cell never appears to lose charge. */
+    CHECK(al80_batt_follow(60, 40, AL80_BATT_CHARGING) == 60);
+    /* Unplugging drops the reading: the shown level walks down, never up. */
+    CHECK(al80_batt_follow(98, 23, AL80_BATT_DISCHARGING) == 97);
+    CHECK(al80_batt_follow(40, 55, AL80_BATT_DISCHARGING) == 40);
+    /* Limits hold, and a full cell is full. */
+    CHECK(al80_batt_follow(100, 100, AL80_BATT_CHARGING) == 100);
+    CHECK(al80_batt_follow(0, 0, AL80_BATT_DISCHARGING) == 0);
+    CHECK(al80_batt_follow(71, 100, AL80_BATT_FULL) == 100);
+}
+
 static void test_parser(void) {
     al80_wl_parser_t p = {{0}, 0};
     uint8_t          f[3] = {0xFF, 0xFF, 0xFF};
@@ -108,6 +124,7 @@ static void test_switch(void) {
 int main(void) {
     test_battery_curve();
     test_battery_eval();
+    test_battery_follow();
     test_parser();
     test_switch();
     printf(failures ? "%d check(s) failed\n" : "all logic checks passed\n", failures);
