@@ -37,6 +37,14 @@
 #    define AL80_IDLE_MS 300000
 #endif
 
+/* LCD rotation: how long the home page and the GIF page each stay up. */
+#ifndef AL80_ROTATE_HOME_MS
+#    define AL80_ROTATE_HOME_MS 20000
+#endif
+#ifndef AL80_ROTATE_GIF_MS
+#    define AL80_ROTATE_GIF_MS 10000
+#endif
+
 /* ---- dynamic keymap ---- */
 /* Vial UID + unlock combo live in keymaps/vial/config.h */
 #define DYNAMIC_KEYMAP_LAYER_COUNT 4

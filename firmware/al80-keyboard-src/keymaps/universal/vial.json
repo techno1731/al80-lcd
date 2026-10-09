@@ -336,6 +336,11 @@
       "name": "Flash",
       "title": "Hold 3 s: enter the bootloader",
       "shortName": "Flash"
+    },
+    {
+      "name": "LCD Auto",
+      "title": "LCD alternates the home page and the GIF on its own",
+      "shortName": "LCD Auto"
     }
   ]
 }

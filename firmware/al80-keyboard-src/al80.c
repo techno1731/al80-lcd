@@ -187,6 +187,30 @@ static uint8_t       last_locks  = 0xFF;   /* caps<<1|num; 0xFF = unknown -> fir
  * presses coalesce to the last. 0 = nothing pending. */
 static volatile uint8_t view_request = 0;
 
+/* LCD rotation: the keyboard alternates the home page and the GIF page by itself, no host
+ * needed. Stored in byte 3 of the EECONFIG_USER dword (tag in the high nibble). Choosing a
+ * view by hand stops it. */
+#define AL80_ROTATE_SHIFT 24
+#define AL80_ROTATE_MASK 0xFF000000u
+#define AL80_ROTATE_TAG 0xD0
+static bool     rotate_on   = false;
+static bool     rotate_gif  = false; /* the GIF page is the one showing */
+static uint32_t rotate_time = 0;
+
+static void al80_rotate_set(bool on) {
+    if (on == rotate_on) return;
+    rotate_on   = on;
+    rotate_gif  = false;
+    rotate_time = timer_read32();
+    eeconfig_update_user((eeconfig_read_user() & ~AL80_ROTATE_MASK) | ((uint32_t)(AL80_ROTATE_TAG | (on ? 1 : 0)) << AL80_ROTATE_SHIFT));
+}
+
+static void al80_rotate_load(void) {
+    const uint8_t b = (uint8_t)((eeconfig_read_user() & AL80_ROTATE_MASK) >> AL80_ROTATE_SHIFT);
+    rotate_on       = (b & 0xF0) == AL80_ROTATE_TAG && (b & 0x01);
+    rotate_time     = timer_read32();
+}
+
 /* ---- custom keycode handler (NEW: this build shipped no process_record of any kind) ----
  * View keys switch the LCD on-device via the deferred view_request; PANEL_* keys additionally
  * signal the host cycler over raw-HID 0x4B. Press-edge only -- QMK does not re-invoke held custom
@@ -237,13 +261,19 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             if (record->event.pressed) al80_bar_step(keycode == AL80_KC_BAR_UP);
             return false;
         case AL80_KC_VIEW_HOME:
-            if (record->event.pressed) view_request = 0x0B;
+            if (record->event.pressed) { view_request = 0x0B; al80_rotate_set(false); }
             return false;
         case AL80_KC_VIEW_PICTURE:
-            if (record->event.pressed) view_request = 0x0D;   /* PK_TOGGLE_PIC advances the ring */
+            if (record->event.pressed) { view_request = 0x0D; al80_rotate_set(false); }  /* PK_TOGGLE_PIC advances the ring */
             return false;
         case AL80_KC_VIEW_GIF:
-            if (record->event.pressed) view_request = 0x0F;
+            if (record->event.pressed) { view_request = 0x0F; al80_rotate_set(false); }
+            return false;
+        case AL80_KC_VIEW_ROTATE:
+            if (record->event.pressed) {
+                al80_rotate_set(!rotate_on);
+                view_request = 0x0B; /* either way, start from the home page */
+            }
             return false;
         /* Host-only, NO local view (was view_request=0x0D). 0x0D is PK_TOGGLE_PIC — it ADVANCES the
          * picture ring (KB R3), not "show picture page". The host's PK_ADD_PIC already commits AND
@@ -744,6 +774,11 @@ void housekeeping_task_kb(void) {
         boot_inits     = 3; /* one more homepage push on the next pass */
     }
     if (!al80_idle_task(&boot_inits) && !g_screen_busy) {
+        if (rotate_on && !view_request && timer_elapsed32(rotate_time) > (rotate_gif ? AL80_ROTATE_GIF_MS : AL80_ROTATE_HOME_MS)) {
+            rotate_gif   = !rotate_gif;
+            rotate_time  = timer_read32();
+            view_request = rotate_gif ? 0x0F : 0x0B;
+        }
         if (view_request) {                /* a host-free view key was pressed; flush the announce */
             uint8_t v    = view_request;
             view_request = 0;
@@ -852,6 +887,7 @@ void keyboard_post_init_kb(void) {
     al80_adc_init();
     al80_batt_sample();
     al80_os_apply();
+    al80_rotate_load();
 
     /* Seed the live palette mirror (EEPROM if a valid magic byte is stored,
        else the compiled default without touching flash). */

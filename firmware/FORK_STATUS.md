@@ -21,6 +21,8 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | Radio | Raw HID (LCD, clock, diagnostics) keeps flowing over USB while typing goes by radio | yes | no (works in USB mode) |
 | Battery | Cell measured against the internal reference; charging and full detected from plug pin | yes | reads 4140 mV, 99%, charging on USB (9 Oct 2026); discharge not yet observed |
 | LCD | Homepage shows the real connection type, OS type and battery state | yes | no |
+| LCD | Fn+7 makes the keyboard alternate the home page and the GIF page by itself (20 s / 10 s) | yes | no |
+| LCD tool | `tooling/al80_screen.py`: GIF and picture upload, view switch, clock, under either USB identity | yes | upload of an 8-frame GIF fully acknowledged (9 Oct 2026); picture not yet seen by eye |
 | Power | Lights and LCD off when the USB host sleeps, the 2.4G host sleeps, or after 5 idle minutes on battery | yes | no |
 
 ## Known gaps
