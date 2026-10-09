@@ -15,7 +15,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | Mac | Function row and Fn navigation substituted in firmware over radio | yes | no |
 | Mac | Dictation, Do Not Disturb and Spotlight keycodes (CUSTOM 32-34) | yes | no |
 | Radio | Link status read as the vendor does (0 = up); upstream had it inverted | yes | yes: module reported link up on 2.4G, 9 Oct 2026 |
-| Radio | 2.4G dongle: typing works with the cable in, selected by key (owner confirmed 9 Oct 2026) | yes | yes; cable-out and media keys not yet confirmed |
+| Radio | 2.4G dongle: typing works with the cable in, selected by key (owner confirmed 9 Oct 2026) | yes | yes, including with the cable out; media keys and host-less boot not yet confirmed |
 | Radio | Media and system keys sent to the module (`55 03 <id> <usage>`) | yes | no |
 | Radio | Mouse reports sent to the module | yes | no |
 | Radio | Lock LED state from the module drives Caps Lock indication | yes | no |
