@@ -14,11 +14,12 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | Mac | Fn is only reported when a host-visible key is pressed with it, so Fn + local keys is not a Globe tap | yes | no |
 | Mac | Function row and Fn navigation substituted in firmware over radio | yes | no |
 | Mac | Dictation, Do Not Disturb and Spotlight keycodes (CUSTOM 32-34) | yes | no |
-| Radio | Link status read as the vendor does (0 = up); upstream had it inverted | yes | no |
+| Radio | Link status read as the vendor does (0 = up); upstream had it inverted | yes | yes: module reported link up on 2.4G, 9 Oct 2026 |
+| Radio | 2.4G dongle: typing works with the cable in, selected by key (owner confirmed 9 Oct 2026) | yes | yes; cable-out and media keys not yet confirmed |
 | Radio | Media and system keys sent to the module (`55 03 <id> <usage>`) | yes | no |
 | Radio | Mouse reports sent to the module | yes | no |
 | Radio | Lock LED state from the module drives Caps Lock indication | yes | no |
-| Radio | Mode switch read on C14 (BT) and C15 (2.4G) at a host-less boot | yes | no |
+| Radio | Mode switch read on C14 (BT) and C15 (2.4G) at a host-less boot | yes | C15 goes low on the dongle position (confirmed); BT position and host-less boot not yet tested |
 | Radio | Raw HID (LCD, clock, diagnostics) keeps flowing over USB while typing goes by radio | yes | no (works in USB mode) |
 | Battery | Cell measured against the internal reference; charging and full detected from plug pin | yes | reads 4140 mV, 99%, charging on USB (9 Oct 2026); discharge not yet observed |
 | LCD | Homepage shows the real connection type, OS type and battery state | yes | no |
@@ -30,6 +31,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 
 - 2.4G with the cable out was dead on upstream. The switch read above is the first fix to try; the
   cause is not yet confirmed.
+- The battery gauge overstates the level while the cell is charging (read 97% on USB, 23% on battery a minute later). It needs charge-aware smoothing.
 - The MCU does not enter stop mode, so battery life will still trail the stock firmware.
 - Reports are sent whether or not the module says the link is up (`AL80_WL_OPTIMISTIC`), until the
   corrected link status is confirmed on hardware.
