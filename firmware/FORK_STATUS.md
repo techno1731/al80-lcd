@@ -10,8 +10,8 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | Flashing | Bootloader entry from a held key (function key + Right Shift, 3 s) and, in development builds, over raw HID | yes | raw HID entry confirmed: build 3 flashed with no hands on the keyboard (9 Oct 2026); held key not yet tried |
 | Boot | Stored settings from another firmware are reset once on first boot | yes | yes, 9 Oct 2026 |
 | Hubs | Enumerates and flashes through a monitor KVM hub (BenQ RD28UG) | yes | yes, build 2 on 9 Oct 2026 |
-| Mac | Fn/Globe key reported over USB (Apple IDs, AppleVendor Top Case usage) | yes | no |
-| Mac | Fn is only reported when a host-visible key is pressed with it, so Fn + local keys is not a Globe tap | yes | no |
+| Mac | Fn/Globe key reported over USB (Apple IDs, AppleVendor Top Case usage) | yes | yes: macOS honours it, Fn+Left moves to line start (owner confirmed on build 7, 9 Oct 2026) |
+| Mac | Fn is only reported when a host-visible key is pressed with it, so Fn + local keys is not a Globe tap | yes | a lone tap acts as the Globe key (confirmed); Fn + local keys not triggering it is not yet confirmed |
 | Mac | Function row mapped in firmware on every connection; Fn navigation substituted over radio | yes | function row confirmed on 2.4G; over USB macOS did not map it by itself, so build 7 does it in firmware (not yet confirmed) |
 | Mac | Dictation, Do Not Disturb and Spotlight keycodes (CUSTOM 32-34) | yes | no |
 | Radio | Link status read as the vendor does (0 = up); upstream had it inverted | yes | yes: module reported link up on 2.4G, 9 Oct 2026 |
