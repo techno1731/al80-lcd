@@ -7,7 +7,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 |---|---|---|---|
 | Modes | Mac and Windows/Linux modes switched with Fn+A / Fn+S, each with its own USB identity (Apple in Mac mode, factory otherwise) | yes | no |
 | Modes | Stock Fn layer restored in Windows/Linux mode: media row, GUI lock, factory reset (hold), side bar brightness | yes | no |
-| Flashing | Bootloader entry from a held key (Fn + Right Shift, 3 s) and, in development builds, over raw HID | yes | no |
+| Flashing | Bootloader entry from a held key (function key + Right Shift, 3 s) and, in development builds, over raw HID | yes | raw HID entry confirmed: build 3 flashed with no hands on the keyboard (9 Oct 2026); held key not yet tried |
 | Boot | Stored settings from another firmware are reset once on first boot | yes | yes, 9 Oct 2026 |
 | Hubs | Enumerates and flashes through a monitor KVM hub (BenQ RD28UG) | yes | yes, build 2 on 9 Oct 2026 |
 | Mac | Fn/Globe key reported over USB (Apple IDs, AppleVendor Top Case usage) | yes | no |
