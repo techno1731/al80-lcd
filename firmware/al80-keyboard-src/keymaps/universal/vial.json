@@ -341,6 +341,11 @@
       "name": "LCD Auto",
       "title": "LCD alternates the home page and the GIF on its own",
       "shortName": "LCD Auto"
+    },
+    {
+      "name": "Dark",
+      "title": "LCD and all lights off, or back on",
+      "shortName": "Dark"
     }
   ]
 }

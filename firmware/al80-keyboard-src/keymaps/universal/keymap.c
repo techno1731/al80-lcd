@@ -22,6 +22,7 @@
 #define V_PIC AL80_KC_VIEW_PICTURE
 #define V_GIF AL80_KC_VIEW_GIF
 #define V_ROT AL80_KC_VIEW_ROTATE
+#define DARK AL80_KC_DARK
 #define OS_MAC AL80_KC_OS_MAC
 #define OS_WIN AL80_KC_OS_WIN
 #define WINLOCK AL80_KC_WINLOCK
@@ -62,10 +63,10 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_LSFT, KC_Z,    KC_X,    KC_C,    KC_V,    KC_B,    KC_N,    KC_M,    KC_COMM, KC_DOT,  KC_SLSH,          KC_RSFT, KC_UP,
         KC_LCTL, KC_LGUI, KC_LALT,                   KC_SPC,                   MO(1),   KC_RCTL, KC_LEFT, KC_DOWN,          KC_RGHT
     ),
-    /* Stock Fn layer: media on the function row, radio on 1-4, LCD rotation on 7 and views on 8/9/0, lighting on the arrows. */
+    /* Stock Fn layer: media on the function row, radio on 1-4, dark mode on 6, LCD rotation on 7 and views on 8/9/0, lighting on the arrows. */
     [AL80_LAYER_WIN_FN] = LAYOUT(
         _______, KC_BRID, KC_BRIU, TASKVW,  KC_MYCM, KC_MAIL, KC_WHOM, KC_MPRV, KC_MPLY, KC_MNXT, KC_MUTE, KC_VOLD, KC_VOLU, _______, _______,
-        _______, BT1,     BT2,     BT3,     RF24,    WIRED,   _______, V_ROT,   V_HOME,  V_PIC,   V_GIF,   _______, _______, RM_TOGG, BAR_UP,
+        _______, BT1,     BT2,     BT3,     RF24,    WIRED,   DARK,    V_ROT,   V_HOME,  V_PIC,   V_GIF,   _______, _______, RM_TOGG, BAR_UP,
         _______, _______, _______, _______, _______, _______, _______, _______, _______, _______, _______, _______, _______, RM_NEXT, BAR_DN,
         _______, OS_MAC,  OS_WIN,  _______, _______, _______, _______, _______, _______, _______, _______, _______,          RM_HUEU,
         _______, _______, _______, _______, _______, _______, _______, _______, _______, _______, _______,          DFU_KEY, RM_VALU,
@@ -83,7 +84,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
        input source), so lighting moves to the right-hand cluster and factory reset to Esc. */
     [AL80_LAYER_MAC_FN] = LAYOUT(
         FACTORY, _______, _______, _______, _______, _______, _______, _______, _______, _______, _______, _______, _______, RM_TOGG, _______,
-        _______, BT1,     BT2,     BT3,     RF24,    WIRED,   _______, V_ROT,   V_HOME,  V_PIC,   V_GIF,   _______, _______, _______, RM_VALU,
+        _______, BT1,     BT2,     BT3,     RF24,    WIRED,   DARK,    V_ROT,   V_HOME,  V_PIC,   V_GIF,   _______, _______, _______, RM_VALU,
         _______, _______, _______, _______, _______, _______, _______, _______, _______, _______, _______, RM_SPDD, RM_SPDU, RM_NEXT, RM_VALD,
         _______, OS_MAC,  OS_WIN,  _______, _______, _______, _______, _______, _______, _______, _______, _______,          RM_HUEU,
         _______, _______, _______, _______, _______, _______, _______, BAR_DN,  BAR_UP,  _______, _______,          DFU_KEY, _______,

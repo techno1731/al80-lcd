@@ -65,6 +65,7 @@ enum al80_keycodes {
     AL80_KC_SPOTLIGHT,                           /* 0x7E22 CUSTOM(34) -> consumer 0x0221 */
     AL80_KC_BOOT,                                /* 0x7E23 CUSTOM(35) -> hold 3s: enter the bootloader */
     AL80_KC_VIEW_ROTATE,                         /* 0x7E24 CUSTOM(36) -> LCD alternates home and GIF on its own */
+    AL80_KC_DARK,                                /* 0x7E25 CUSTOM(37) -> LCD and all lights off, or back on */
 };
 
 /* ---- OS mode (al80_os.c) ----

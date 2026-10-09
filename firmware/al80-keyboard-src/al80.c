@@ -245,6 +245,8 @@ static void al80_rotate_load(void) {
  * and/or fires raw_hid_send; it never does a blocking USART3 sdWrite/wait_us in the key path (that
  * was the v24 typing-stall regression -- USART3 work is deferred to housekeeping_task_kb). */
 static void al80_bar_step(bool up);
+static void al80_dark_set(bool dark);
+static bool lights_dark;
 
 /* Destructive keys act only after being held this long. */
 #define AL80_HOLD_MS 3000
@@ -263,6 +265,11 @@ void bootloader_jump(void) {
 
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     if (!al80_apple_process(keycode, record)) return false;
+    /* Asking for a view also ends dark mode. */
+    if (record->event.pressed && lights_dark &&
+        (keycode == AL80_KC_VIEW_HOME || keycode == AL80_KC_VIEW_PICTURE || keycode == AL80_KC_VIEW_GIF || keycode == AL80_KC_VIEW_ROTATE)) {
+        al80_dark_set(false);
+    }
     switch (keycode) {
         case AL80_KC_RESET:
         case AL80_KC_BOOT:
@@ -285,6 +292,12 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         case AL80_KC_BAR_UP:
         case AL80_KC_BAR_DOWN:
             if (record->event.pressed) al80_bar_step(keycode == AL80_KC_BAR_UP);
+            return false;
+        case AL80_KC_DARK:
+            if (record->event.pressed) {
+                al80_dark_set(!lights_dark);
+                if (!lights_dark) view_request = 0x0B;
+            }
             return false;
         case AL80_KC_VIEW_HOME:
             if (record->event.pressed) { view_request = 0x0B; al80_rotate_set(false); }
@@ -508,8 +521,13 @@ typedef struct {
 static al80_theme_store_t theme       = {0, 0, {{0, 0, 0}}};
 static bool               gif_showing = false; /* the LCD is on its GIF page */
 static uint32_t           gif_since   = 0;     /* when it got there */
-static int8_t             theme_scene = -1;    /* scene whose colour is applied, -1 for none */
-static HSV                theme_saved;         /* the user's colour, restored on leaving */
+
+/* Lighting is managed: one solid colour across keys and side bar. White on the home page, the
+ * scene's colour on the GIF page, and everything off, LCD included, in dark mode. */
+static bool    lights_dark    = false;
+static int16_t light_hue      = -1; /* colour currently applied, -1 before the first apply */
+static uint8_t light_sat      = 0;
+static bool    light_restart  = false; /* dark mode ended: the LCD needs its homepage again */
 
 static void al80_theme_load(void) {
 #if (EECONFIG_KB_DATA_SIZE) > 0
@@ -532,34 +550,53 @@ static uint32_t al80_theme_cycle_ms(void) {
     return total;
 }
 
-static void al80_theme_stop(void) {
-    if (theme_scene >= 0) rgb_matrix_sethsv_noeeprom(theme_saved.h, theme_saved.s, rgb_matrix_get_val());
-    theme_scene = -1;
-}
-
 /* Record which LCD page is up. Called for key presses, rotation and host view commands. */
 static void al80_lcd_page(bool gif) {
     gif_showing = gif;
     gif_since   = timer_read32();
-    if (!gif) al80_theme_stop();
 }
 
-static void al80_theme_task(void) {
+/* Force the next al80_light_task() to apply its colour again. */
+static void al80_light_refresh(void) {
+    light_hue = -1;
+}
+
+static void al80_light_task(void) {
+    if (lights_dark) return;
+    uint8_t        hue = 0, sat = 0; /* white */
     const uint32_t cycle = al80_theme_cycle_ms();
-    if (!gif_showing || cycle == 0) {
-        al80_theme_stop();
-        return;
+    if (gif_showing && cycle) {
+        uint32_t at    = timer_elapsed32(gif_since) % cycle;
+        uint8_t  scene = 0;
+        while (scene < theme.count - 1 && at >= (uint32_t)theme.scenes[scene].tenths * 100) {
+            at -= (uint32_t)theme.scenes[scene].tenths * 100;
+            scene++;
+        }
+        hue = theme.scenes[scene].hue;
+        sat = theme.scenes[scene].sat;
     }
-    uint32_t at    = timer_elapsed32(gif_since) % cycle;
-    int8_t   scene = 0;
-    while (scene < theme.count - 1 && at >= (uint32_t)theme.scenes[scene].tenths * 100) {
-        at -= (uint32_t)theme.scenes[scene].tenths * 100;
-        scene++;
+    if (light_hue == hue && light_sat == sat) return;
+    light_hue = hue;
+    light_sat = sat;
+    rgb_matrix_enable_noeeprom();
+    rgb_matrix_mode_noeeprom(RGB_MATRIX_SOLID_COLOR);
+    rgb_matrix_sethsv_noeeprom(hue, sat, rgb_matrix_get_val());
+    bar_h = hue; /* the side bar keeps its own brightness and takes the same colour */
+    bar_s = sat;
+}
+
+/* Dark mode: LCD and every light off until it is switched back or a view key is pressed. */
+static void al80_dark_set(bool dark) {
+    if (dark == lights_dark) return;
+    lights_dark = dark;
+    writePin(C9, !dark); /* LCD module power */
+    if (dark) {
+        rgb_matrix_disable_noeeprom();
+    } else {
+        light_restart = true;
+        al80_lcd_page(false);
+        al80_light_refresh();
     }
-    if (scene == theme_scene) return;
-    if (theme_scene < 0) theme_saved = rgb_matrix_get_hsv();
-    theme_scene = scene;
-    rgb_matrix_sethsv_noeeprom(theme.scenes[scene].hue, theme.scenes[scene].sat, rgb_matrix_get_val());
 }
 
 /* Side bar brightness in eight steps, stored like any other bar change. */
@@ -695,8 +732,11 @@ static bool al80_idle_task(uint8_t *boot_inits) {
         al80_idle = want;
         if (want) al80_lcd_page(false);
         rgb_matrix_set_suspend_state(want);
-        writePin(AL80_LCD_POWER_PIN, !want);
-        if (!want) *boot_inits = 0; /* the module lost its homepage: push it again */
+        if (!lights_dark) writePin(AL80_LCD_POWER_PIN, !want);
+        if (!want) {
+            *boot_inits = 0; /* the module lost its homepage: push it again */
+            al80_light_refresh();
+        }
     }
     return al80_idle;
 }
@@ -844,7 +884,6 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
         case AP_THEME_SET: { // 0x50
             const uint8_t count = data[1];
             if (count <= AL80_THEME_MAX && 2 + count * 3 <= length) {
-                al80_theme_stop();
                 theme.count = count;
                 memcpy(theme.scenes, &data[2], count * 3);
                 al80_theme_save();
@@ -914,14 +953,18 @@ void housekeeping_task_kb(void) {
         }
     }
     al80_os_task();
-    al80_theme_task();
+    al80_light_task();
+    if (light_restart) {
+        light_restart = false;
+        boot_inits    = 0; /* the module was powered down: push the homepage again */
+    }
     if (homepage_dirty) {
         homepage_dirty = false;
         boot_inits     = 3; /* one more homepage push on the next pass */
     }
     if (!al80_idle_task(&boot_inits) && !g_screen_busy) {
         const uint32_t gif_ms = al80_theme_cycle_ms() ? al80_theme_cycle_ms() : AL80_ROTATE_GIF_MS;
-        if (rotate_on && !view_request && timer_elapsed32(rotate_time) > (rotate_gif ? gif_ms : AL80_ROTATE_HOME_MS)) {
+        if (rotate_on && !lights_dark && !view_request && timer_elapsed32(rotate_time) > (rotate_gif ? gif_ms : AL80_ROTATE_HOME_MS)) {
             rotate_gif   = !rotate_gif;
             rotate_time  = timer_read32();
             view_request = rotate_gif ? 0x0F : 0x0B;
