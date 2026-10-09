@@ -31,11 +31,7 @@
 
 /* ---- firmware identity and behaviour ---- */
 /* Build counter reported by the 0x4C diagnostic, bumped on every flashed build. */
-#define AL80_FW_BUILD 1
-/* OS icon on the LCD homepage: 0 Windows, 1 Mac. A keymap may override it. */
-#ifndef AL80_OS_TYPE
-#    define AL80_OS_TYPE 0
-#endif
+#define AL80_FW_BUILD 2
 /* On battery, lights and LCD go dark after this long without a key or knob event. */
 #ifndef AL80_IDLE_MS
 #    define AL80_IDLE_MS 300000

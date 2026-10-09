@@ -10,6 +10,9 @@
  *
  * Over Bluetooth or 2.4G the radio module owns the HID descriptor, so there is no
  * Fn usage to send. The firmware substitutes the same behaviour itself.
+ *
+ * All of this applies in Mac mode only. In Windows/Linux mode the Apple Fn key is
+ * never on the active layers and nothing here changes what a key sends.
  */
 #include "quantum.h"
 #include "al80.h"
@@ -23,10 +26,8 @@ static bool     fn_sent = false; /* the host has been told */
 static bool     fn_used = false; /* something happened while it was down */
 static uint32_t fn_down = 0;
 
-#ifdef AL80_MAC_LAYOUT
 /* Keys substituted in firmware and still held: bits 0-11 function row, 12-16 navigation. */
 static uint32_t substituted = 0;
-#endif
 
 typedef struct {
     bool     system; /* generic desktop page, else consumer page */
@@ -49,11 +50,9 @@ static const al80_usage_t fkey_usage[12] = {
     {false, 0x00E9}, /* F12 volume up */
 };
 
-#ifdef AL80_MAC_LAYOUT
 /* Fn + these keys, as macOS maps them on an Apple keyboard. */
 static const uint8_t nav_from[5] = {KC_LEFT, KC_RIGHT, KC_UP, KC_DOWN, KC_BSPC};
 static const uint8_t nav_to[5]   = {KC_HOME, KC_END, KC_PGUP, KC_PGDN, KC_DEL};
-#endif
 
 static void send_usage(al80_usage_t u, bool pressed) {
     if (u.system) {
@@ -63,17 +62,12 @@ static void send_usage(al80_usage_t u, bool pressed) {
     }
 }
 
-/* True when the host sees the Apple USB descriptor and handles Fn itself. */
+/* True when the host sees the Apple USB identity and handles Fn itself: Mac mode on the cable. */
 static bool host_handles_fn(void) {
-#ifdef AL80_APPLE_USB
-#    ifdef AL80_WIRELESS_ENABLE
-    return al80_wireless_mode() == AL80_WL_USB;
-#    else
-    return true;
-#    endif
-#else
-    return false;
+#ifdef AL80_WIRELESS_ENABLE
+    if (al80_wireless_mode() != AL80_WL_USB) return false;
 #endif
+    return al80_os_mode() == AL80_OS_MAC;
 }
 
 static void fn_report(bool on) {
@@ -100,9 +94,9 @@ bool al80_apple_process(uint16_t keycode, keyrecord_t *record) {
                 fn_sent = false;
                 fn_used = false;
                 fn_down = timer_read32();
-                layer_on(AL80_FN_LAYER);
+                layer_on(AL80_LAYER_MAC_FN);
             } else {
-                layer_off(AL80_FN_LAYER);
+                layer_off(AL80_LAYER_MAC_FN);
                 fn_held = false;
                 if (fn_sent) {
                     fn_report(false);
@@ -128,8 +122,7 @@ bool al80_apple_process(uint16_t keycode, keyrecord_t *record) {
             break;
     }
 
-#ifdef AL80_MAC_LAYOUT
-    if (!host_handles_fn()) {
+    if (al80_os_mode() == AL80_OS_MAC && !host_handles_fn()) {
         /* Function row: media first, Fn gives the F-key. */
         if (keycode >= KC_F1 && keycode <= KC_F12) {
             const uint8_t  i   = (uint8_t)(keycode - KC_F1);
@@ -161,7 +154,6 @@ bool al80_apple_process(uint16_t keycode, keyrecord_t *record) {
             }
         }
     }
-#endif
 
     if (pressed && fn_held) {
         /* The host only hears about Fn when a key it can see is pressed with it. Local

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Build the AL80 firmware on macOS or Linux.
 #
-# Usage:  ./build.sh [keymap]        keymap: mac (default) or vial
+# Usage:  ./build.sh [keymap]        keymap: universal (default) or vial
 #
 # Needs: a vial-qmk checkout (QMK_HOME, default ../../vial-qmk) at the pinned commit with
 # its ChibiOS submodules, arm-none-eabi-gcc on PATH and the qmk CLI.
 set -euo pipefail
 
-KEYMAP="${1:-mac}"
+KEYMAP="${1:-universal}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 QMK_HOME="${QMK_HOME:-$HERE/../../vial-qmk}"
 QMK_COMMIT="dd43959ae5c08d8a28d38a1acf7b04e86b14a344"

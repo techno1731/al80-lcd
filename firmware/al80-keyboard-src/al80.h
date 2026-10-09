@@ -50,22 +50,45 @@ enum al80_keycodes {
     AL80_KC_24G = QK_KB_0 + 4,                   /* 0x7E04 CUSTOM(4)  -> 2.4G dongle */
     AL80_KC_USB = QK_KB_0 + 30,                  /* 0x7E1E CUSTOM(30) -> back to wired */
 
+    /* ---- factory numbering kept for the stock functions this firmware reimplements ---- */
+    AL80_KC_RESET    = QK_KB_0 + 6,              /* 0x7E06 CUSTOM(6)  -> hold 3s: factory reset */
+    AL80_KC_WINLOCK  = QK_KB_0 + 7,              /* 0x7E07 CUSTOM(7)  -> lock/unlock the GUI key */
+    AL80_KC_OS_WIN   = QK_KB_0 + 8,              /* 0x7E08 CUSTOM(8)  -> Windows/Linux mode */
+    AL80_KC_OS_MAC   = QK_KB_0 + 9,              /* 0x7E09 CUSTOM(9)  -> Mac mode */
+    AL80_KC_BAR_UP   = QK_KB_0 + 17,             /* 0x7E11 CUSTOM(17) -> side bar brighter */
+    AL80_KC_BAR_DOWN = QK_KB_0 + 18,             /* 0x7E12 CUSTOM(18) -> side bar dimmer */
+
     /* ---- Apple keys ---- */
     AL80_KC_APPLE_FN = QK_KB_0 + 31,             /* 0x7E1F CUSTOM(31) -> Globe/Fn + keyboard Fn layer */
     AL80_KC_DICTATION,                           /* 0x7E20 CUSTOM(32) -> consumer 0x00CF */
     AL80_KC_DND,                                 /* 0x7E21 CUSTOM(33) -> system 0x009B */
     AL80_KC_SPOTLIGHT,                           /* 0x7E22 CUSTOM(34) -> consumer 0x0221 */
+    AL80_KC_BOOT,                                /* 0x7E23 CUSTOM(35) -> hold 3s: enter the bootloader */
 };
+
+/* ---- OS mode (al80_os.c) ----
+ * Values are the display module's PK_OS_TYPE. Windows mode also serves Linux. */
+typedef enum { AL80_OS_WIN = 0, AL80_OS_MAC = 1 } al80_os_t;
+
+al80_os_t al80_os_mode(void);
+/* Load the stored mode and pick the USB identity. Call before USB starts. */
+void al80_os_init(void);
+/* Apply the mode's default layer. Call after the keymap is up. */
+void al80_os_apply(void);
+/* Store a new mode and restart so the host sees the matching USB identity. */
+void al80_os_request(al80_os_t mode);
+void al80_os_task(void);
 
 /* Apple key handling (al80_apple.c). Returns false when the key was consumed. */
 bool al80_apple_process(uint16_t keycode, keyrecord_t *record);
 /* Something other than a key used the Fn layer (the knob), so Fn is not a Globe tap. */
 void al80_apple_fn_used(void);
 
-/* Layer the Apple Fn key holds. */
-#ifndef AL80_FN_LAYER
-#    define AL80_FN_LAYER 1
-#endif
+/* Base and Fn layers of each OS mode. */
+#define AL80_LAYER_WIN 0
+#define AL80_LAYER_WIN_FN 1
+#define AL80_LAYER_MAC 2
+#define AL80_LAYER_MAC_FN 3
 
 /* ---- wireless (al80_wireless.c) ----
  * Mode values are the module's own 1-based numbering: 1-3 are BLE slots, 4 is

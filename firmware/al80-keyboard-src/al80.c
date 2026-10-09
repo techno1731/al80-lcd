@@ -152,10 +152,10 @@ static void al80_homepage_init(void) {
 #endif
     g_screen_busy = true;
     al80_screen_send_u8(0x01, conn);            wait_us(500); /* PK_CONN_TYPE                   */
-    al80_screen_send_u8(0x02, AL80_OS_TYPE);    wait_us(500); /* PK_OS_TYPE: 0 Windows, 1 Mac   */
+    al80_screen_send_u8(0x02, al80_os_mode());  wait_us(500); /* PK_OS_TYPE: 0 Windows, 1 Mac   */
     al80_screen_send_u8(0x03, (leds >> 1) & 1); wait_us(500); /* PK_CAPS_STATUS                 */
     al80_screen_send_u8(0x04, leds & 1);        wait_us(500); /* PK_NUMLOCK_STATUS              */
-    al80_screen_send_u8(0x05, 0);               wait_us(500); /* PK_WINLOCK_STATUS              */
+    al80_screen_send_u8(0x05, keymap_config.no_gui ? 1 : 0); wait_us(500); /* PK_WINLOCK_STATUS    */
     al80_screen_send_u8(0x07, al80_batt.status);wait_us(500); /* PK_BATT_STATUS                 */
     al80_screen_send_u8(0x06, al80_batt.pct);   wait_us(500); /* PK_BATT_QUANTITY               */
     g_screen_busy = false;
@@ -194,9 +194,48 @@ static volatile uint8_t view_request = 0;
  * the keycode: no HID keystroke reaches the OS/focused app. The handler sets one byte (view_request)
  * and/or fires raw_hid_send; it never does a blocking USART3 sdWrite/wait_us in the key path (that
  * was the v24 typing-stall regression -- USART3 work is deferred to housekeeping_task_kb). */
+static void al80_bar_step(bool up);
+
+/* Destructive keys act only after being held this long. */
+#define AL80_HOLD_MS 3000
+static uint16_t          hold_key   = KC_NO; /* held destructive key, KC_NO when none */
+static uint32_t          hold_since = 0;
+static volatile bool     homepage_dirty = false; /* a status value changed: push the homepage again */
+
+/* The stm32duino bootloader stays in DFU when it finds this flag in backup register 10. */
+void bootloader_jump(void) {
+    RCC->APB1ENR |= RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN;
+    PWR->CR |= PWR_CR_DBP;
+    BKP->DR10 = 0x424C;
+    PWR->CR &= ~PWR_CR_DBP;
+    NVIC_SystemReset();
+}
+
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     if (!al80_apple_process(keycode, record)) return false;
     switch (keycode) {
+        case AL80_KC_RESET:
+        case AL80_KC_BOOT:
+            hold_key   = record->event.pressed ? keycode : KC_NO;
+            hold_since = timer_read32();
+            return false;
+        case AL80_KC_OS_WIN:
+            if (record->event.pressed) al80_os_request(AL80_OS_WIN);
+            return false;
+        case AL80_KC_OS_MAC:
+            if (record->event.pressed) al80_os_request(AL80_OS_MAC);
+            return false;
+        case AL80_KC_WINLOCK:
+            if (record->event.pressed) {
+                keymap_config.no_gui = !keymap_config.no_gui;
+                eeconfig_update_keymap(&keymap_config);
+                homepage_dirty = true;
+            }
+            return false;
+        case AL80_KC_BAR_UP:
+        case AL80_KC_BAR_DOWN:
+            if (record->event.pressed) al80_bar_step(keycode == AL80_KC_BAR_UP);
+            return false;
         case AL80_KC_VIEW_HOME:
             if (record->event.pressed) view_request = 0x0B;
             return false;
@@ -385,6 +424,13 @@ static void al80_bar_save(void) {
     al80_bar_store_t store = {AL80_BAR_MAGIC, bar_h, bar_s, bar_v, bar_independent ? 1 : 0};
     eeconfig_update_kb_datablock(&store, AL80_BAR_STORE_OFFSET, sizeof(store));
 #endif
+}
+
+/* Side bar brightness in eight steps, stored like any other bar change. */
+static void al80_bar_step(bool up) {
+    const int16_t v = (int16_t)bar_v + (up ? 32 : -32);
+    bar_v           = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+    al80_bar_save();
 }
 
 /* ---- per-key live LED stream (host audio-reactive) ----
@@ -638,6 +684,17 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
             break;
 #endif
 
+#if defined(AL80_DEV_HID_BOOT)
+        /* Development builds only: [0x4E, 'B','O','O','T'] enters the bootloader without a key press. */
+        case 0x4E:
+            if (data[1] == 'B' && data[2] == 'O' && data[3] == 'O' && data[4] == 'T') {
+                hold_key   = AL80_KC_BOOT;
+                hold_since = timer_read32() - AL80_HOLD_MS - 1;
+                data[6]    = 0x55;
+            }
+            break;
+#endif
+
         default:
             break;
     }
@@ -669,6 +726,22 @@ void housekeeping_task_kb(void) {
             al80_wireless_battery_push(al80_batt.pct);
         }
 #endif
+    }
+    if (hold_key != KC_NO && timer_elapsed32(hold_since) > AL80_HOLD_MS) {
+        const uint16_t key = hold_key;
+        hold_key           = KC_NO;
+        clear_keyboard();
+        if (key == AL80_KC_BOOT) {
+            bootloader_jump();
+        } else {
+            eeconfig_init(); /* the layout stamp goes with it, so the next boot starts clean */
+            soft_reset_keyboard();
+        }
+    }
+    al80_os_task();
+    if (homepage_dirty) {
+        homepage_dirty = false;
+        boot_inits     = 3; /* one more homepage push on the next pass */
     }
     if (!al80_idle_task(&boot_inits) && !g_screen_busy) {
         if (view_request) {                /* a host-free view key was pressed; flush the announce */
@@ -704,6 +777,14 @@ void housekeeping_task_kb(void) {
 }
 
 void keyboard_pre_init_kb(void) {
+    /* A bootloader request that was served, or ignored, must not linger. */
+    RCC->APB1ENR |= RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN;
+    if (BKP->DR10 == 0x424C) {
+        PWR->CR |= PWR_CR_DBP;
+        BKP->DR10 = 0;
+        PWR->CR &= ~PWR_CR_DBP;
+    }
+    al80_os_init();
 #if defined(AL80_WIRELESS_ENABLE)
     /* FIRST, before anything else -- this is what stock does.
      *
@@ -731,41 +812,28 @@ void keyboard_pre_init_kb(void) {
     keyboard_pre_init_user();
 }
 
-/* ---- one-time dynamic-keymap fixups (version-gated) ----
- * The knob-press key sits at matrix [0,14] (the encoder-click position — the
- * 15th arg of the top LAYOUT row, col pin C13). keymaps/vial/keymap.c ships it
- * as plain KC_MUTE on all four layers. An older keymap.c seeded a tap-hold
- * keycode there into the dynamic-keymap EEPROM, and that stale value SURVIVES a
- * reflash (QMK never erases the emulated EEPROM on flash), so the mute key gets
- * a ~200ms tap-hold delay on-device. This runs once per fixups-version to
- * surgically rewrite ONLY that one key back to KC_MUTE, leaving every other
- * dynamic-keymap customization intact.
- *
- * Gating byte lives in the fixed EECONFIG_USER dword — a core eeconfig field at
- * a constant address, NOT the KB datablock and NOT the dynamic-keymap region.
- * So stamping it disturbs nothing: not the palette/side-bar sub-blocks (KB
- * datablock, magics 0x5A/0x5B) and not DYNAMIC_KEYMAP_EEPROM_START (anchored to
- * EECONFIG_SIZE = base + KB_DATA_SIZE + USER_DATA_SIZE, none of which change).
- * Growing the KB datablock instead WOULD shift EECONFIG_SIZE and scramble the
- * whole stored keymap, which is exactly why we don't. */
-#define AL80_KNOB_ROW       0
-#define AL80_KNOB_COL       14
-#define AL80_FIXUPS_VERSION 1   /* bump to re-run fixups after a future keymap change */
+/* ---- first boot after flashing over another firmware ----
+ * QMK never erases the emulated EEPROM on a flash, so settings written by the firmware that
+ * was there before (stock, or an older build with a different layout) are read back as if
+ * they were ours: a default layer that does not exist here, a keymap at other offsets.
+ * A stamp in byte 0 of the EECONFIG_USER dword marks the store as written by this layout.
+ * When it is missing, everything is reset to compiled defaults and the board restarts once.
+ * Byte 1 of the same dword is the stored wireless mode (al80_wireless.c). */
+#define AL80_EEPROM_STAMP 0x5E /* change when the stored layout changes */
 
-static void al80_apply_dynamic_keymap_fixups(void) {
-    uint32_t ecu = eeconfig_read_user();
-    if ((ecu & 0xFFu) == AL80_FIXUPS_VERSION) {
-        return;   /* already applied — never fight a later user remap of this key */
+static void al80_claim_eeprom(void) {
+    if ((eeconfig_read_user() & 0xFFu) == AL80_EEPROM_STAMP) {
+        return;
     }
-    /* keymap.c has KC_MUTE at [0,14] on every layer; restore each one. */
-    for (uint8_t layer = 0; layer < DYNAMIC_KEYMAP_LAYER_COUNT; layer++) {
-        dynamic_keymap_set_keycode(layer, AL80_KNOB_ROW, AL80_KNOB_COL, KC_MUTE);
-    }
-    /* Preserve the upper 3 bytes of the user dword; stamp only the version byte. */
-    eeconfig_update_user((ecu & 0xFFFFFF00u) | AL80_FIXUPS_VERSION);
+    eeconfig_init();
+    eeconfig_update_user(AL80_EEPROM_STAMP);
+    soft_reset_keyboard();
 }
 
 void keyboard_post_init_kb(void) {
+    /* Before anything reads stored settings. */
+    al80_claim_eeprom();
+
     /* Free PA13/14/15 + PB3/4 from SWD/JTAG so the matrix can use them */
     AFIO->MAPR = (AFIO->MAPR & ~AFIO_MAPR_SWJ_CFG_Msk);
     AFIO->MAPR |= AFIO_MAPR_SWJ_CFG_DISABLE;
@@ -783,6 +851,7 @@ void keyboard_post_init_kb(void) {
 
     al80_adc_init();
     al80_batt_sample();
+    al80_os_apply();
 
     /* Seed the live palette mirror (EEPROM if a valid magic byte is stored,
        else the compiled default without touching flash). */
@@ -791,9 +860,6 @@ void keyboard_post_init_kb(void) {
     /* Seed the independent side-bar color from its own EEPROM sub-block. */
     al80_bar_load();
 
-    /* One-time: undo the stale tap-hold on the knob-press key (runs after
-       via_init(), so this write to the dynamic keymap is not clobbered). */
-    al80_apply_dynamic_keymap_fixups();
 
     keyboard_post_init_user();
 }

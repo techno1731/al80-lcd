@@ -11,7 +11,7 @@ OPT_DEFS += -DAL80_LCD_ENABLE
 SRC += al80_wireless.c
 
 # Apple Fn/Globe key and Mac function row
-SRC += al80_apple.c
+SRC += al80_apple.c al80_os.c
 OPT_DEFS += -DAL80_WIRELESS_ENABLE
 
 # Custom, user-recolorable RGB matrix effect (PALETTE_CYCLE)

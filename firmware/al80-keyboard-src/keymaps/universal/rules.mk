@@ -9,7 +9,6 @@ TAP_DANCE_ENABLE = no
 COMBO_ENABLE = no
 KEY_OVERRIDE_ENABLE = no
 
-# Fn/Globe rides in the reserved byte of the 6-key report, which NKRO does not have.
-APPLE_FN_ENABLE = yes
-NKRO_ENABLE = no
+# Fn/Globe rides in the reserved byte of the 6-key report. NKRO stays available in
+# Windows/Linux mode; Mac mode keeps to 6-key reports.
 OPT_DEFS += -DAPPLE_FN_ENABLE

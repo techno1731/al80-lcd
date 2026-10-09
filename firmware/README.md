@@ -5,7 +5,8 @@
 Branch `mac-and-wireless` builds on the custom QMK source in `al80-keyboard-src/` and is not yet
 verified on hardware. Status of each change is tracked in `FORK_STATUS.md`.
 
-- **Build:** `./build.sh mac` (Apple Fn/Globe, Mac layout) or `./build.sh vial` (stock USB identity).
+- **Build:** `./build.sh` builds the `universal` keymap (Mac and Windows/Linux modes, switchable on the
+  keyboard); `./build.sh vial` builds upstream's keymap. `./flash.sh` writes the result over DFU.
   Runs on macOS and Linux against a pinned vial-qmk commit; the QMK core changes live in
   `al80-keyboard-src/patches/vial-qmk-core.patch`.
 - **Tests:** `test/run.sh` runs the hardware-free C logic tests and the wire-format tests.
