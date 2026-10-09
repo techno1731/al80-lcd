@@ -46,7 +46,7 @@ home page is possible; replacing the screen module's firmware has not been inves
 
 ## Evidence on Hand
 
-- `screen/lookout.gif`: 39-frame eyes animation, uploaded to the home page strip on 9 Oct 2026.
+- `screen/tide-glow.gif`: the eyes the owner chose on 9 Oct 2026 from four rendered directions (Tide Glow: eyes made of drifting motes of blue light). On the home page strip. The earlier amber `lookout.gif` was rejected.
 - `tooling/al80_screen.py`: uploads GIFs and pictures; an 8-frame GIF was confirmed animating on
   the device by the owner.
 - No photo of the built-in home page yet, so its arrangement is unknown to the design.
