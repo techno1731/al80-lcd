@@ -16,6 +16,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | Mac | Dictation, Do Not Disturb and Spotlight keycodes (CUSTOM 32-34) | yes | no |
 | Radio | Link status read as the vendor does (0 = up); upstream had it inverted | yes | yes: module reported link up on 2.4G, 9 Oct 2026 |
 | Radio | 2.4G dongle: typing works with the cable in, selected by key (owner confirmed 9 Oct 2026) | yes | yes, including with the cable out and from a cold start on the switch (9 Oct 2026); media keys not yet confirmed |
+| Radio | Bluetooth: pairs and connects from the switch position plus the slot key (owner confirmed on build 3, 9 Oct 2026) | yes | yes; typing, media keys and knob over Bluetooth not yet itemised |
 | Radio | Media and system keys sent to the module (`55 03 <id> <usage>`) | yes | function row confirmed on 2.4G (9 Oct 2026); the knob did nothing on build 2, fixed in build 3 by holding each step, not yet flashed |
 | Radio | Mouse reports sent to the module | yes | no |
 | Radio | Lock LED state from the module drives Caps Lock indication | yes | no |
