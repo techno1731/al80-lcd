@@ -45,7 +45,10 @@ bool encoder_update_user(uint8_t index, bool clockwise) {
             rgb_matrix_decrease_val();
         }
     } else {
-        tap_code16(clockwise ? KC_VOLU : KC_VOLD);
+        /* Over radio a press and release sent back to back are merged by the module and the
+           host sees nothing, so each step is held long enough to cross the link. */
+        const uint16_t hold = al80_wireless_mode() == AL80_WL_USB ? TAP_CODE_DELAY : 24;
+        tap_code_delay(clockwise ? KC_VOLU : KC_VOLD, hold);
     }
     return false;
 }
