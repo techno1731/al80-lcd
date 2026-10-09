@@ -5,8 +5,8 @@
  *
  * Over USB the board identifies as an Apple keyboard and reports the real Fn/Globe
  * key (AppleVendor Top Case usage 0x03, carried in the reserved byte of the boot
- * keyboard report). macOS then does what it does for a Magic Keyboard: the function
- * row follows the system setting, Fn+arrows navigate and Globe shortcuts work.
+ * keyboard report), which is what Fn+arrows and Globe shortcuts need. The function
+ * row is mapped in firmware on every connection.
  *
  * Over Bluetooth or 2.4G the radio module owns the HID descriptor, so there is no
  * Fn usage to send. The firmware substitutes the same behaviour itself.
@@ -122,8 +122,10 @@ bool al80_apple_process(uint16_t keycode, keyrecord_t *record) {
             break;
     }
 
-    if (al80_os_mode() == AL80_OS_MAC && !host_handles_fn()) {
-        /* Function row: media first, Fn gives the F-key. */
+    if (al80_os_mode() == AL80_OS_MAC) {
+        /* Function row: media first, Fn gives the F-key. Done here on every connection:
+         * macOS does not apply its own function-row mapping to this keyboard over USB, Apple
+         * identity or not (seen on hardware, 9 Oct 2026). */
         if (keycode >= KC_F1 && keycode <= KC_F12) {
             const uint8_t  i   = (uint8_t)(keycode - KC_F1);
             const uint32_t bit = 1ul << i;
@@ -138,6 +140,8 @@ bool al80_apple_process(uint16_t keycode, keyrecord_t *record) {
                 return false;
             }
         }
+    }
+    if (al80_os_mode() == AL80_OS_MAC && !host_handles_fn()) {
         /* Fn + arrows and Fn + Backspace. */
         for (uint8_t i = 0; i < 5; i++) {
             const uint32_t bit = 1ul << (12 + i);

@@ -12,7 +12,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | Hubs | Enumerates and flashes through a monitor KVM hub (BenQ RD28UG) | yes | yes, build 2 on 9 Oct 2026 |
 | Mac | Fn/Globe key reported over USB (Apple IDs, AppleVendor Top Case usage) | yes | no |
 | Mac | Fn is only reported when a host-visible key is pressed with it, so Fn + local keys is not a Globe tap | yes | no |
-| Mac | Function row and Fn navigation substituted in firmware over radio | yes | no |
+| Mac | Function row mapped in firmware on every connection; Fn navigation substituted over radio | yes | function row confirmed on 2.4G; over USB macOS did not map it by itself, so build 7 does it in firmware (not yet confirmed) |
 | Mac | Dictation, Do Not Disturb and Spotlight keycodes (CUSTOM 32-34) | yes | no |
 | Radio | Link status read as the vendor does (0 = up); upstream had it inverted | yes | yes: module reported link up on 2.4G, 9 Oct 2026 |
 | Radio | 2.4G dongle: typing works with the cable in, selected by key (owner confirmed 9 Oct 2026) | yes | yes, including with the cable out and from a cold start on the switch (9 Oct 2026); media keys not yet confirmed |
