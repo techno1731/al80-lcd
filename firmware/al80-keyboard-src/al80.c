@@ -298,7 +298,9 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         case AL80_KC_VIEW_ROTATE:
             if (record->event.pressed) {
                 al80_rotate_set(!rotate_on);
-                view_request = 0x0B; /* either way, start from the home page */
+                /* Turning it on shows the GIF at once, so the key visibly did something. */
+                rotate_gif   = rotate_on;
+                view_request = rotate_on ? 0x0F : 0x0B;
             }
             return false;
         /* Host-only, NO local view (was view_request=0x0D). 0x0D is PK_TOGGLE_PIC — it ADVANCES the
