@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """Drive the YUNZII AL80 screen from the command line.
 
-    al80_screen.py gif <file> [--where page|home|boot] [--fps N] [--fit cover|contain]
+    al80_screen.py gif <file>... [--where page|home|boot] [--fps N] [--fit cover|contain] [--no-theme]
     al80_screen.py picture <file> [--fit cover|contain]
     al80_screen.py view home|gif|picture
     al80_screen.py clock
     al80_screen.py clear gif|pictures
 
+Several GIF files become one medley: the slot's frames are shared out evenly and the scenes
+play one after another. With our firmware the key backlight then takes each scene's dominant
+colour in step with the animation (--no-theme leaves the backlight alone).
+
 Needs the keyboard on USB, and the hidapi and Pillow packages. Works with the factory
 USB identity and with the Apple identity our firmware presents in Mac mode.
 """
 import argparse
+import colorsys
 import datetime
 import sys
 import time
@@ -27,6 +32,9 @@ OP_ANNOUNCE, OP_DATA, OP_FINISH = 0x40, 0x41, 0x42
 PK_TIME, PK_DATE = 0x09, 0x0A
 PK_GO_HOME, PK_ADD_PIC, PK_NEXT_PIC, PK_DEL_PIC, PK_GO_GIF = 0x0B, 0x0C, 0x0D, 0x0E, 0x0F
 PK_GUI_EVENT, PK_FRAME_LEN, PK_GIF_NUM, PK_GIF_FRAME = 0x10, 0x11, 0x12, 0x13
+
+OP_THEME_SET = 0x50  # our firmware: backlight colour per GIF scene
+THEME_MAX = 8
 
 CHUNK = 56     # payload bytes per report
 BANK = 1024    # GIF frames are written to the module in banks of this size
@@ -85,6 +93,42 @@ def rgb565_be(image):
     return bytes(out)
 
 
+def fill_scene(frames, count):
+    """Exactly `count` frames from a clip: thinned evenly when it is longer, looped when shorter."""
+    if len(frames) > count:
+        return [frames[round(i * (len(frames) - 1) / (count - 1))] for i in range(count)] if count > 1 else frames[:1]
+    return [frames[i % len(frames)] for i in range(count)]
+
+
+def dominant_hue_sat(rgb_frames):
+    """Dominant vivid colour of a scene as QMK hue and saturation (0-255 each).
+
+    Pixels vote with their saturation times brightness, so a dark or grey background does not
+    wash out the answer. Hue is averaged on the colour wheel."""
+    import math
+    x = y = weight = sat_sum = 0.0
+    for raw in rgb_frames:
+        for i in range(0, len(raw), 3 * 7):  # every seventh pixel is plenty
+            h, s, v = colorsys.rgb_to_hsv(raw[i] / 255, raw[i + 1] / 255, raw[i + 2] / 255)
+            w = s * v
+            x += math.cos(h * 2 * math.pi) * w
+            y += math.sin(h * 2 * math.pi) * w
+            sat_sum += s * w
+            weight += w
+    if weight < 1e-6:
+        return 0, 0  # a colourless scene: white light
+    hue = (math.atan2(y, x) / (2 * math.pi)) % 1.0
+    return round(hue * 255) % 256, max(140, min(255, round(sat_sum / weight * 255)))
+
+
+def theme_report(scenes):
+    """The firmware's theme packet: scenes are (seconds, hue, sat)."""
+    body = [OP_THEME_SET, len(scenes)]
+    for seconds, hue, sat in scenes:
+        body += [max(1, min(255, round(seconds * 10))), hue, sat]
+    return body + [0] * (64 - len(body))
+
+
 def gif_stream(frames, mode, fps):
     """Every report of a GIF upload, each paired with the pause the module needs after it."""
     steps = [(report(OP_ANNOUNCE, command(PK_GIF_NUM, [mode, 0])), 0.03),
@@ -137,7 +181,7 @@ def load_frames(path, height, fit, limit):
         canvas = Image.new("RGBA", rgb.size, (0, 0, 0, 255))
         canvas.alpha_composite(rgb)
         fitted = (ImageOps.fit if fit == "cover" else ImageOps.pad)(canvas.convert("RGB"), (PANEL_W, height), Image.LANCZOS)
-        frames.append(rgb565_be(fitted))
+        frames.append(fitted.tobytes())
     if len(frames) > limit:
         # Keep the whole animation by dropping frames evenly.
         keep = [round(i * (len(frames) - 1) / (limit - 1)) for i in range(limit)]
@@ -146,6 +190,15 @@ def load_frames(path, height, fit, limit):
         durations = [d * scale for d in durations[:limit]]
     mean_ms = sum(durations) / len(durations) if durations and sum(durations) else 100
     return frames, max(1, min(60, round(1000 / mean_ms)))
+
+
+def rgb565_bytes(raw):
+    """RGB888 bytes to RGB565, high byte first."""
+    out = bytearray()
+    for i in range(0, len(raw), 3):
+        value = ((raw[i] >> 3) << 11) | ((raw[i + 1] >> 2) << 5) | (raw[i + 2] >> 3)
+        out += bytes((value >> 8, value & 0xFF))
+    return bytes(out)
 
 
 # ---- device ----
@@ -167,7 +220,10 @@ def send(steps, label=None):
         total = len(steps)
         for count, (packet, pause) in enumerate(steps, 1):
             device.write([0x00] + packet)
-            reply = device.read(64, 500)  # each report is echoed back with an ACK byte
+            try:
+                reply = device.read(64, 500)  # each report is echoed back with an ACK byte
+            except OSError:
+                sys.exit(f"lost the keyboard at report {count} of {total} (unplugged, or a KVM switched away): run it again")
             if not reply:
                 sys.exit(f"keyboard stopped answering at report {count} of {total}")
             if pause:
@@ -184,10 +240,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="action", required=True)
     gif = sub.add_parser("gif")
-    gif.add_argument("file")
+    gif.add_argument("file", nargs="+")
     gif.add_argument("--where", choices=GIF_TARGETS, default="page")
     gif.add_argument("--fps", type=int)
     gif.add_argument("--fit", choices=("cover", "contain"), default="cover")
+    gif.add_argument("--no-theme", action="store_true")
     picture = sub.add_parser("picture")
     picture.add_argument("file")
     picture.add_argument("--fit", choices=("cover", "contain"), default="cover")
@@ -198,15 +255,27 @@ def main():
 
     if args.action == "gif":
         mode, height, limit = GIF_TARGETS[args.where]
-        frames, fps = load_frames(args.file, height, args.fit, limit)
-        fps = args.fps or fps
-        print(f"{len(frames)} frames at {fps} fps, {PANEL_W}x{height}")
+        if len(args.file) > THEME_MAX:
+            sys.exit(f"at most {THEME_MAX} GIFs in one medley")
+        clips = [load_frames(path, height, args.fit, limit) for path in args.file]
+        fps = args.fps or (clips[0][1] if len(clips) == 1 else 10)
+        if len(clips) == 1:
+            scenes = [clips[0][0]]
+        else:
+            share = limit // len(clips)  # every scene gets the same number of frames
+            scenes = [fill_scene(frames, share) for frames, _ in clips]
+        theme = [(len(scene) / fps, *dominant_hue_sat(scene)) for scene in scenes]
+        frames = [rgb565_bytes(raw) for scene in scenes for raw in scene]
+        print(f"{len(frames)} frames at {fps} fps, {PANEL_W}x{height}, {len(scenes)} scene(s) of {len(scenes[0]) / fps:.1f} s")
         send(gif_stream(frames, mode, fps), "uploading")
         if args.where == "page":
+            if not args.no_theme:
+                send([(theme_report(theme), 0.05)])
+                print("backlight theme: " + ", ".join(f"hue {h} sat {s}" for _, h, s in theme))
             send(simple_stream(PK_GO_GIF))
     elif args.action == "picture":
         frames, _ = load_frames(args.file, 160, args.fit, 1)
-        send(picture_stream(frames[0]), "uploading")
+        send(picture_stream(rgb565_bytes(frames[0])), "uploading")
     elif args.action == "view":
         send(simple_stream({"home": PK_GO_HOME, "gif": PK_GO_GIF, "picture": PK_NEXT_PIC}[args.page]))
     elif args.action == "clock":

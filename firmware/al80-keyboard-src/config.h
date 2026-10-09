@@ -31,7 +31,7 @@
 
 /* ---- firmware identity and behaviour ---- */
 /* Build counter reported by the 0x4C diagnostic, bumped on every flashed build. */
-#define AL80_FW_BUILD 4
+#define AL80_FW_BUILD 5
 /* On battery, lights and LCD go dark after this long without a key or knob event. */
 #ifndef AL80_IDLE_MS
 #    define AL80_IDLE_MS 300000
@@ -78,7 +78,10 @@
  * VIA/Vial dynamic-keymap or rgb_matrix eeconfig storage. */
 #define AL80_PALETTE_STORE_SIZE (1 + AL80_PALETTE_LEN * 2)
 #define AL80_BAR_STORE_SIZE     5   /* magic + h + s + v + independent */
-#define EECONFIG_KB_DATA_SIZE   (AL80_PALETTE_STORE_SIZE + AL80_BAR_STORE_SIZE)
+/* Backlight theme for the GIF page: magic + scene count + AL80_THEME_MAX x {tenths of a second, hue, sat}. */
+#define AL80_THEME_MAX          8
+#define AL80_THEME_STORE_SIZE   (2 + AL80_THEME_MAX * 3)
+#define EECONFIG_KB_DATA_SIZE   (AL80_PALETTE_STORE_SIZE + AL80_BAR_STORE_SIZE + AL80_THEME_STORE_SIZE)
 
 /* raw-HID palette protocol opcodes (top-level, alongside LCD 0x40..0x42).
  * VIA command IDs top out at 0x13 (+0xFE/0xFF), so these reach the default
@@ -98,6 +101,11 @@
  * Report: [0x49, offset, count, R,G,B x count(<=20), spare]. RAM-only, no EEPROM. The handler
  * memcpys each chunk into g_live_rgb and the indicators hook repaints it every render. */
 #define AP_LIVE_LEDS 0x49
+
+/* raw-HID backlight theme for the GIF page. SET: [0x50, count, {tenths, hue, sat} x count] stores it;
+ * GET: [0x51] -> [0x51, count, {tenths, hue, sat} x count]. A count of 0 switches the theme off. */
+#define AP_THEME_SET 0x50
+#define AP_THEME_GET 0x51
 
 /* keyboard -> host panel-request signal (UNSOLICITED raw_hid_send, not a reply). Report:
  * [0x4B, panelId, 0...]. 0x49/0x4A/0x4B were the free opcodes above the host->kb customs

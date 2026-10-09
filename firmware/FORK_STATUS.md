@@ -26,6 +26,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | LCD | Homepage shows the real connection type, OS type and battery state | yes | no |
 | LCD | Fn+7 makes the keyboard alternate the home page and the GIF page by itself (20 s / 10 s) | yes | no |
 | LCD tool | `tooling/al80_screen.py`: GIF and picture upload, view switch, clock, under either USB identity | yes | upload of an 8-frame GIF fully acknowledged (9 Oct 2026); picture not yet seen by eye |
+| LCD | Several GIFs uploaded as one medley; the key backlight takes each scene's dominant colour in step with it (raw HID 0x50 stores the scene list) | yes | no |
 | Power | Lights and LCD off when the USB host sleeps, the 2.4G host sleeps, or after 5 idle minutes on battery | yes | no |
 
 ## Known gaps

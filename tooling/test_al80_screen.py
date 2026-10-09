@@ -74,10 +74,28 @@ class Packets(unittest.TestCase):
         self.assertEqual(len(wanted), 6)                # announce, setup, three headers, one length
         self.assertTrue(wanted <= seen, [hexrow(w[:18]) for w in wanted - seen])
 
+    def test_scene_fill_thins_and_loops(self):
+        self.assertEqual(s.fill_scene(list(range(10)), 5), [0, 2, 4, 7, 9])
+        self.assertEqual(s.fill_scene([1, 2, 3], 7), [1, 2, 3, 1, 2, 3, 1])
+        self.assertEqual(len(s.fill_scene(list(range(40)), 40)), 40)
+
+    def test_dominant_colour_ignores_dark_ground(self):
+        green_on_black = bytes([0, 0, 0] * 900 + [0, 255, 0] * 100)
+        hue, sat = s.dominant_hue_sat([green_on_black])
+        self.assertTrue(80 <= hue <= 90, hue)      # green is a third of the way round the wheel
+        self.assertEqual(sat, 255)
+        self.assertEqual(s.dominant_hue_sat([bytes([30, 30, 30] * 100)]), (0, 0))  # grey: white light
+
+    def test_theme_report_layout(self):
+        packet = s.theme_report([(4.0, 85, 255), (25.9, 200, 180)])
+        self.assertEqual(packet[:8], [0x50, 2, 40, 85, 255, 255, 200, 180])  # 25.9 s caps at 25.5
+        self.assertEqual(len(packet), 64)
+
     def test_rgb565_is_big_endian(self):
         from PIL import Image
         self.assertEqual(s.rgb565_be(Image.new("RGB", (1, 1), (255, 0, 0))), b"\xF8\x00")
         self.assertEqual(s.rgb565_be(Image.new("RGB", (1, 1), (0, 0, 255))), b"\x00\x1F")
+        self.assertEqual(s.rgb565_bytes(bytes([255, 0, 0, 0, 0, 255])), b"\xF8\x00\x00\x1F")
 
 
 if __name__ == "__main__":

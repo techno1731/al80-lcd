@@ -484,6 +484,84 @@ static void al80_bar_save(void) {
 #endif
 }
 
+/* ---- GIF page backlight theme ----
+ * The GIF on the LCD can be a medley of scenes. The host tool that uploads it also stores, per
+ * scene, how long it lasts and its dominant colour. While the GIF page is showing, the key
+ * backlight takes each scene's colour in step with the animation; when the LCD leaves the GIF
+ * page the backlight returns to what the user had. The module restarts the GIF when its page is
+ * selected, so timing is counted from that moment. */
+#define AL80_THEME_MAGIC 0x5C
+#define AL80_THEME_STORE_OFFSET (AL80_BAR_STORE_OFFSET + sizeof(al80_bar_store_t))
+
+typedef struct {
+    uint8_t tenths; /* scene length in tenths of a second */
+    uint8_t hue;
+    uint8_t sat;
+} al80_scene_t;
+
+typedef struct {
+    uint8_t      magic;
+    uint8_t      count;
+    al80_scene_t scenes[AL80_THEME_MAX];
+} al80_theme_store_t;
+
+static al80_theme_store_t theme       = {0, 0, {{0, 0, 0}}};
+static bool               gif_showing = false; /* the LCD is on its GIF page */
+static uint32_t           gif_since   = 0;     /* when it got there */
+static int8_t             theme_scene = -1;    /* scene whose colour is applied, -1 for none */
+static HSV                theme_saved;         /* the user's colour, restored on leaving */
+
+static void al80_theme_load(void) {
+#if (EECONFIG_KB_DATA_SIZE) > 0
+    eeconfig_read_kb_datablock(&theme, AL80_THEME_STORE_OFFSET, sizeof(theme));
+#endif
+    if (theme.magic != AL80_THEME_MAGIC || theme.count > AL80_THEME_MAX) theme.count = 0;
+}
+
+static void al80_theme_save(void) {
+#if (EECONFIG_KB_DATA_SIZE) > 0
+    theme.magic = AL80_THEME_MAGIC;
+    eeconfig_update_kb_datablock(&theme, AL80_THEME_STORE_OFFSET, sizeof(theme));
+#endif
+}
+
+/* One full pass through every scene, in milliseconds. 0 when there is no theme. */
+static uint32_t al80_theme_cycle_ms(void) {
+    uint32_t total = 0;
+    for (uint8_t i = 0; i < theme.count; i++) total += (uint32_t)theme.scenes[i].tenths * 100;
+    return total;
+}
+
+static void al80_theme_stop(void) {
+    if (theme_scene >= 0) rgb_matrix_sethsv_noeeprom(theme_saved.h, theme_saved.s, rgb_matrix_get_val());
+    theme_scene = -1;
+}
+
+/* Record which LCD page is up. Called for key presses, rotation and host view commands. */
+static void al80_lcd_page(bool gif) {
+    gif_showing = gif;
+    gif_since   = timer_read32();
+    if (!gif) al80_theme_stop();
+}
+
+static void al80_theme_task(void) {
+    const uint32_t cycle = al80_theme_cycle_ms();
+    if (!gif_showing || cycle == 0) {
+        al80_theme_stop();
+        return;
+    }
+    uint32_t at    = timer_elapsed32(gif_since) % cycle;
+    int8_t   scene = 0;
+    while (scene < theme.count - 1 && at >= (uint32_t)theme.scenes[scene].tenths * 100) {
+        at -= (uint32_t)theme.scenes[scene].tenths * 100;
+        scene++;
+    }
+    if (scene == theme_scene) return;
+    if (theme_scene < 0) theme_saved = rgb_matrix_get_hsv();
+    theme_scene = scene;
+    rgb_matrix_sethsv_noeeprom(theme.scenes[scene].hue, theme.scenes[scene].sat, rgb_matrix_get_val());
+}
+
 /* Side bar brightness in eight steps, stored like any other bar change. */
 static void al80_bar_step(bool up) {
     const int16_t v = (int16_t)bar_v + (up ? 32 : -32);
@@ -615,6 +693,7 @@ static bool al80_idle_task(uint8_t *boot_inits) {
     }
     if (want != al80_idle) {
         al80_idle = want;
+        if (want) al80_lcd_page(false);
         rgb_matrix_set_suspend_state(want);
         writePin(AL80_LCD_POWER_PIN, !want);
         if (!want) *boot_inits = 0; /* the module lost its homepage: push it again */
@@ -637,6 +716,11 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
             uint8_t data_len = data[3];
             if (data_len > length - 7) {
                 data_len = length - 7;
+            }
+            /* A view switch sent by the host: note which page the LCD is going to. */
+            if (data[0] == AP_W_SCREEN_INFO && data[7] == 0xA5 && data[8] == 0x5A &&
+                (data[9] == 0x0B || data[9] == 0x0D || data[9] == 0x0F)) {
+                al80_lcd_page(data[9] == 0x0F);
             }
 #if defined(AL80_LCD_ENABLE)
             /* No byte-swap: the display module reads RGB565 big-endian, same as al80-studio
@@ -757,6 +841,24 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
         }
 #endif
 
+        case AP_THEME_SET: { // 0x50
+            const uint8_t count = data[1];
+            if (count <= AL80_THEME_MAX && 2 + count * 3 <= length) {
+                al80_theme_stop();
+                theme.count = count;
+                memcpy(theme.scenes, &data[2], count * 3);
+                al80_theme_save();
+                data[63] = 0x55; /* ACK in the last byte: the scene list fills the front */
+            } else {
+                data[63] = 0x0F;
+            }
+            break;
+        }
+        case AP_THEME_GET: // 0x51
+            data[1] = theme.count;
+            memcpy(&data[2], theme.scenes, theme.count * 3);
+            break;
+
 #if defined(AL80_DEV_HID_BOOT)
         /* Development builds only: [0x4E, 'B','O','O','T'] enters the bootloader without a key press. */
         case 0x4E:
@@ -812,12 +914,14 @@ void housekeeping_task_kb(void) {
         }
     }
     al80_os_task();
+    al80_theme_task();
     if (homepage_dirty) {
         homepage_dirty = false;
         boot_inits     = 3; /* one more homepage push on the next pass */
     }
     if (!al80_idle_task(&boot_inits) && !g_screen_busy) {
-        if (rotate_on && !view_request && timer_elapsed32(rotate_time) > (rotate_gif ? AL80_ROTATE_GIF_MS : AL80_ROTATE_HOME_MS)) {
+        const uint32_t gif_ms = al80_theme_cycle_ms() ? al80_theme_cycle_ms() : AL80_ROTATE_GIF_MS;
+        if (rotate_on && !view_request && timer_elapsed32(rotate_time) > (rotate_gif ? gif_ms : AL80_ROTATE_HOME_MS)) {
             rotate_gif   = !rotate_gif;
             rotate_time  = timer_read32();
             view_request = rotate_gif ? 0x0F : 0x0B;
@@ -826,6 +930,7 @@ void housekeeping_task_kb(void) {
             uint8_t v    = view_request;
             view_request = 0;
             al80_screen_view(v);           /* 7-byte PK_GO home/picture/gif over USART3 */
+            al80_lcd_page(v == 0x0F);
         }
         if (locks_dirty) {                 /* a Caps/Num toggle landed mid-transfer; flush it now */
             locks_dirty = false;
@@ -897,7 +1002,7 @@ void keyboard_pre_init_kb(void) {
  * A stamp in byte 0 of the EECONFIG_USER dword marks the store as written by this layout.
  * When it is missing, everything is reset to compiled defaults and the board restarts once.
  * Byte 1 of the same dword is the stored wireless mode (al80_wireless.c). */
-#define AL80_EEPROM_STAMP 0x5E /* change when the stored layout changes */
+#define AL80_EEPROM_STAMP 0x5F /* change when the stored layout changes */
 
 static void al80_claim_eeprom(void) {
     if ((eeconfig_read_user() & 0xFFu) == AL80_EEPROM_STAMP) {
@@ -938,6 +1043,7 @@ void keyboard_post_init_kb(void) {
 
     /* Seed the independent side-bar color from its own EEPROM sub-block. */
     al80_bar_load();
+    al80_theme_load();
 
 
     keyboard_post_init_user();
