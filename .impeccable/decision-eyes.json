@@ -1,0 +1,72 @@
+{
+  "title": "Choose the eyes",
+  "question": "Four directions for the animated eyes on the keyboard's home screen, each shown as the real 96x64 animation at 6x. Keep the lead, take another, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Ping-Pong",
+      "kicker": "THE ROLL",
+      "lineage": "puppet workshop: ping-pong ball eyes on felt",
+      "thesis": "Two glossy balls on red felt with pupils that have weight: they overshoot, go cross-eyed, roll, and get a deadpan half-lid.",
+      "palette": ["#E23E24", "#FFFFFF", "#D6D0C4", "#121010"],
+      "materials": ["felt", "glossy plastic"],
+      "viewport": "A solid red strip with a face that fills it; the only direction with a coloured ground and a sense of humour.",
+      "risk": "The red ground is loud next to the home page's own readouts, and a comic character may wear thin on a work desk.",
+      "raised": [
+        {"from": "challenger-sixpack", "raise": "Pupils now move on a damped spring, so every glance settles physically instead of snapping."}
+      ],
+      "comp": ".impeccable/mocks/decision/assigned.webp"
+    },
+    {
+      "id": "model-pick",
+      "label": "Happy Mac",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "1984 Macintosh startup icon, one-bit pixel drawing",
+      "thesis": "A strict black-and-white face on a coarse pixel grid that blinks, glances, winks and dissolves in a dither.",
+      "palette": ["#000000", "#FFFFFF"],
+      "materials": ["one-bit pixels", "dither"],
+      "viewport": "White blocks on black: a face with a nose and a smile, readable from across the desk.",
+      "risk": "The most familiar idea on the table for a Mac keyboard, and it uses none of the screen's colour.",
+      "comp": ".impeccable/mocks/decision/model-pick.webp"
+    },
+    {
+      "id": "challenger-tideglow",
+      "label": "Tide Glow",
+      "verdict": "competitive",
+      "lineage": "bioluminescent plankton on a night sea",
+      "thesis": "Eyes made of hundreds of drifting motes of blue light; a blink spills them downward as a wake before they gather again.",
+      "palette": ["#00060C", "#0046A0", "#00B8FF", "#AAFFEC"],
+      "materials": ["living light", "black water"],
+      "viewport": "Two soft clouds of twinkling light on near-black, always slightly in motion.",
+      "case": "The most alive and the least like a cartoon; loses some clarity because the eye shapes are soft.",
+      "risk": "At arm's length the motes can read as blue smudges rather than eyes.",
+      "comp": ".impeccable/mocks/decision/challenger-tideglow.webp"
+    },
+    {
+      "id": "challenger-sixpack",
+      "label": "Six-Pack",
+      "verdict": "competitive",
+      "lineage": "night-flight instrument panel",
+      "thesis": "Two instrument dials whose radium-green needles do the looking; when the eyes disagree an amber caution lamp lights, and a blink is the instrument flag dropping.",
+      "palette": ["#090B0A", "#141716", "#F2F2E8", "#96FF54", "#FFB000"],
+      "materials": ["matte panel", "luminous paint"],
+      "viewport": "Two gauges side by side on a black panel, needles sweeping with damped motion.",
+      "case": "Fits a command screen best and stays calm beside the readouts; less of a character than the others.",
+      "risk": "Reads as two clocks before it reads as eyes.",
+      "comp": ".impeccable/mocks/decision/challenger-sixpack.webp"
+    }
+  ],
+  "reroll": {"registers": ["safer", "bolder"]},
+  "buildPath": {"value": "code", "toggle": false},
+  "canon": true,
+  "canonCard": {
+    "label": "Companion",
+    "thesis": "The rounded robot eyes this kind of screen usually ships with, in cyan, done cleanly.",
+    "palette": ["#000000", "#00D2FF", "#BEF5FF"],
+    "materials": ["soft glow"],
+    "viewport": "Two glowing rounded rectangles that blink and glance.",
+    "risk": "Indistinguishable from the stock look by design.",
+    "comp": ".impeccable/mocks/decision/canon.webp"
+  },
+  "steer": true
+}
