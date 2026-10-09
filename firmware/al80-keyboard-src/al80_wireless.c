@@ -32,6 +32,7 @@
 
 #include "quantum.h"
 #include "al80.h"
+#include "al80_logic.h"
 #include <string.h>
 
 #ifdef AL80_WIRELESS_ENABLE
@@ -69,6 +70,9 @@
 static const SerialConfig ble_serial_config = {AL80_BLE_BAUD, 0, 0, 0};
 
 static bool          wireless_started   = false; /* SD1 up */
+static uint8_t       wl_led_state       = 0;     /* host lock LEDs as relayed by the module */
+static bool          wl_host_suspended  = false; /* 2.4G host went to sleep */
+static uint32_t      wl_last_activity   = 0;     /* last report handed to the module */
 static bool          wireless_connected = false; /* module reports a live link */
 static al80_wl_mode_t kb_mode           = AL80_WL_USB;
 static host_driver_t *usb_driver        = NULL;
@@ -158,6 +162,20 @@ static bool     wl_auto_mode = false; /* mode came from a restore, not a keypres
  * radio actually is than anything we have stored. 0 = it has not said. */
 static uint8_t module_mode = 0;
 
+/* ---- mode switch ------------------------------------------------------- */
+
+/* The BT / wired / dongle slide switch pulls one of two MCU pins low. The vendor
+ * source for this board family names them: BT on C14, 2.4G on C15. */
+#    define AL80_SW_BT_PIN C14
+#    define AL80_SW_24G_PIN C15
+
+static al80_switch_t sw_pos  = AL80_SW_WIRED; /* debounced position */
+static bool          sw_seen = false;         /* a wireless position was read at least once */
+
+static al80_switch_t sw_read_raw(void) {
+    return al80_switch_decode(readPin(AL80_SW_BT_PIN), readPin(AL80_SW_24G_PIN));
+}
+
 /* ---- low level --------------------------------------------------------- */
 
 /* Count what the driver ACCEPTED, not what we asked it to send. sdWrite returns
@@ -232,7 +250,7 @@ static inline bool wl_should_send(void) {
 /* Battery percentage for the host's battery service. Only meaningful once a
  * link exists; sending it unconnected is harmless but pointless. */
 void al80_wireless_battery_push(uint8_t pct) {
-    if (!wireless_started || !wl_should_send()) return;
+    if (!wireless_started || kb_mode == AL80_WL_USB || kb_mode == AL80_WL_24G || !wireless_connected) return;
     const uint8_t pkt[4] = {AL80_BLE_SYNC, 0x02, 0x09, pct};
     ble_write(pkt, sizeof(pkt));
 }
@@ -242,7 +260,7 @@ void al80_wireless_battery_push(uint8_t pct) {
 /* The module owns the lock LEDs while wireless; it pushes state back to us via
  * the inbound parser rather than us reading it. Nothing to report upward. */
 static uint8_t wl_keyboard_leds(void) {
-    return 0;
+    return wl_led_state;
 }
 
 /* Pace reports so we never outrun the module. Blocking here is unavoidable --
@@ -262,6 +280,7 @@ static void wl_send_keyboard(report_keyboard_t *report) {
     ble_put(0x09);
     ble_put(0x01);
     ble_write((uint8_t *)report, KEYBOARD_REPORT_SIZE);
+    wl_last_activity = timer_read32();
     wl_pace();
 }
 
@@ -277,12 +296,28 @@ static void wl_send_nkro(report_nkro_t *report) {
 #        define wl_send_nkro NULL
 #    endif
 
+/* Every report is `55 <len> <report id> <body>`: the module forwards by report id. */
 static void wl_send_mouse(report_mouse_t *report) {
-    (void)report; /* not carried over the module's protocol */
+#    ifdef MOUSE_SHARED_EP
+    if (!wl_should_send() || sizeof(report_mouse_t) != 6) return;
+    ble_put(AL80_BLE_SYNC);
+    ble_put(sizeof(report_mouse_t));
+    ble_write((uint8_t *)report, sizeof(report_mouse_t));
+    wl_last_activity = timer_read32();
+    wl_pace();
+#    else
+    (void)report;
+#    endif
 }
 
+/* Consumer (media) and system reports: id 3 = system, id 4 = consumer, then a 16-bit usage. */
 static void wl_send_extra(report_extra_t *report) {
-    (void)report;
+    if (!wl_should_send()) return;
+    ble_put(AL80_BLE_SYNC);
+    ble_put(sizeof(report_extra_t));
+    ble_write((uint8_t *)report, sizeof(report_extra_t));
+    wl_last_activity = timer_read32();
+    wl_pace();
 }
 
 #    ifdef RAW_ENABLE
@@ -290,8 +325,12 @@ static void wl_send_extra(report_extra_t *report) {
  * carries HID reports, not our 0xFF60 vendor traffic. Dropping it while
  * wireless is correct, not a gap. */
 static void wl_send_raw_hid(uint8_t *data, uint8_t length) {
-    (void)data;
-    (void)length;
+    /* The module does not carry vendor traffic, but the cable may still be in:
+     * keep the LCD, clock sync and diagnostics alive over USB while typing goes by radio. */
+    if (usb_driver && usb_driver->send_raw_hid &&
+        usb_device_state_get_configure_state() == USB_DEVICE_STATE_CONFIGURED) {
+        usb_driver->send_raw_hid(data, length);
+    }
 }
 #    endif
 
@@ -315,19 +354,21 @@ static void ble_handle_frame(uint8_t cmd, uint8_t mode, uint8_t data) {
 
     if (mode >= AL80_WL_BT1 && mode <= AL80_WL_24G) module_mode = mode;
 
+    /* Frames describe one mode; ignore the ones that are not about the mode we are in. */
+    if (mode != (uint8_t)kb_mode) return;
+
     switch (cmd) {
-        case 0x00: /* connection status */
-            wireless_connected = (data != 0);
+        case 0x00: /* connection status: 0 = link up (the vendor firmware tests data == 0) */
+            wireless_connected = al80_wl_link_up(data);
             break;
-        case 0x01: /* host lock LED state (caps/num) */
-            /* Surface it through the normal QMK path so the LCD lock icons and
-             * any RGB indicators keep working identically to USB. */
+        case 0x01: /* host lock LED state, returned through the host driver like USB does */
+            wl_led_state = data;
             break;
-        case 0x02: /* power: 0xAA suspend, 0xBB resume */
+        case 0x02: /* 2.4G host power: 0xAA suspend, 0xBB resume */
             if (data == 0xAA) {
-                wireless_connected = false;
+                wl_host_suspended = true;
             } else if (data == 0xBB) {
-                wireless_connected = true;
+                wl_host_suspended = false;
             }
             break;
         default:
@@ -338,9 +379,8 @@ static void ble_handle_frame(uint8_t cmd, uint8_t mode, uint8_t data) {
 /* Non-blocking drain of SD1. Runs from housekeeping, so a silent module costs
  * one failed read per scan and nothing else. */
 static void ble_poll_rx(void) {
-    static uint8_t buf[5];
-    static uint8_t have = 0;
-    msg_t          c;
+    static al80_wl_parser_t parser;
+    msg_t                   c;
 
     while ((c = sdGetTimeout(&SD1, TIME_IMMEDIATE)) >= 0) {
         uint8_t b = (uint8_t)c;
@@ -349,11 +389,8 @@ static void ble_poll_rx(void) {
         dbg_last_rx[1] = dbg_last_rx[2];
         dbg_last_rx[2] = dbg_last_rx[3];
         dbg_last_rx[3] = b;
-        if (have == 0 && b != AL80_BLE_SYNC) continue; /* resync */
-        buf[have++] = b;
-        if (have == 5) {
-            ble_handle_frame(buf[2], buf[3], buf[4]);
-            have = 0;
+        if (al80_wl_parse(&parser, b)) {
+            ble_handle_frame(parser.buf[2], parser.buf[3], parser.buf[4]);
         }
     }
 }
@@ -381,6 +418,8 @@ static void wl_boot_mode_save(al80_wl_mode_t mode) {
 void al80_wireless_init(void) {
     /* USART1 on its default pins: PA9 TX, PA10 RX. No AFIO remap needed --
      * unlike USART3, which the LCD drives on the partial remap. */
+    setPinInputHigh(AL80_SW_BT_PIN);
+    setPinInputHigh(AL80_SW_24G_PIN);
     palSetPadMode(GPIOA, 9, PAL_MODE_STM32_ALTERNATE_PUSHPULL);
     palSetPadMode(GPIOA, 10, PAL_MODE_INPUT);
     sdStart(&SD1, &ble_serial_config);
@@ -444,6 +483,19 @@ void al80_wireless_debug(uint8_t *out) {
     out[45] = (uint8_t)((eeconfig_read_user() & AL80_WL_BOOT_MASK) >> AL80_WL_BOOT_SHIFT);
     out[46] = module_mode;
     out[47] = (uint8_t)((wl_boot_done ? 0x01 : 0) | (wl_auto_mode ? 0x02 : 0));
+
+    out[48] = (uint8_t)((readPin(AL80_SW_BT_PIN) ? 0x01 : 0) | (readPin(AL80_SW_24G_PIN) ? 0x02 : 0) |
+                        (sw_seen ? 0x04 : 0) | (wl_host_suspended ? 0x08 : 0));
+    out[49] = (uint8_t)sw_pos;
+    out[50] = wl_led_state;
+}
+
+bool al80_wireless_host_suspended(void) {
+    return wl_host_suspended;
+}
+
+uint32_t al80_wireless_last_activity(void) {
+    return wl_last_activity;
 }
 
 /* Called from process_record_kb. Records intent only -- the ~400ms of blocking
@@ -477,6 +529,9 @@ static void al80_wireless_apply(al80_wl_mode_t mode, bool pair, bool save) {
     const uint8_t wire_mode = (uint8_t)mode;
 
     wireless_connected = false;
+    wl_led_state       = 0;
+    wl_host_suspended  = false;
+    wl_last_activity   = timer_read32();
     ble_wake(AL80_BLE_WAKE_SETTLE_MS);
     if (pair) {
         ble_cmd_pair(wire_mode);
@@ -497,6 +552,20 @@ void al80_wireless_task(bool screen_busy) {
     if (!wireless_started) return;
 
     ble_poll_rx();
+
+    /* Debounce the mode switch: a position must hold for 50ms to count. */
+    {
+        static al80_switch_t sw_last    = AL80_SW_WIRED;
+        static uint32_t      sw_changed = 0;
+        const al80_switch_t  now        = sw_read_raw();
+        if (now != sw_last) {
+            sw_last    = now;
+            sw_changed = timer_read32();
+        } else if (now != sw_pos && now != AL80_SW_INVALID && timer_elapsed32(sw_changed) > 50) {
+            sw_pos = now;
+            if (now != AL80_SW_WIRED) sw_seen = true;
+        }
+    }
 
     /* Failsafe: a switch that never connects reverts to USB so the keyboard is
      * never left mute. */
@@ -525,7 +594,13 @@ void al80_wireless_task(bool screen_busy) {
             wl_boot_done = true; /* a host owns us; USB stays */
         } else if (timer_elapsed32(wl_boot_time) > AL80_WL_BOOT_GRACE_MS) {
             wl_boot_done              = true;
-            const al80_wl_mode_t want = module_mode ? (al80_wl_mode_t)module_mode : wl_boot_mode_load();
+            al80_wl_mode_t want = module_mode ? (al80_wl_mode_t)module_mode : wl_boot_mode_load();
+            if (sw_pos == AL80_SW_24G) {
+                want = AL80_WL_24G;
+            } else if (sw_pos == AL80_SW_BT && (want < AL80_WL_BT1 || want > AL80_WL_BT3)) {
+                const al80_wl_mode_t stored = wl_boot_mode_load();
+                want = (stored >= AL80_WL_BT1 && stored <= AL80_WL_BT3) ? stored : AL80_WL_BT1;
+            }
             if (want != AL80_WL_USB) wl_request(want, false, false);
         }
     }

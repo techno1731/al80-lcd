@@ -29,6 +29,18 @@
 #define DRIVER_1_LED_TOTAL 45
 #define DRIVER_2_LED_TOTAL 39
 
+/* ---- firmware identity and behaviour ---- */
+/* Build counter reported by the 0x4C diagnostic, bumped on every flashed build. */
+#define AL80_FW_BUILD 1
+/* OS icon on the LCD homepage: 0 Windows, 1 Mac. A keymap may override it. */
+#ifndef AL80_OS_TYPE
+#    define AL80_OS_TYPE 0
+#endif
+/* On battery, lights and LCD go dark after this long without a key or knob event. */
+#ifndef AL80_IDLE_MS
+#    define AL80_IDLE_MS 300000
+#endif
+
 /* ---- dynamic keymap ---- */
 /* Vial UID + unlock combo live in keymaps/vial/config.h */
 #define DYNAMIC_KEYMAP_LAYER_COUNT 4

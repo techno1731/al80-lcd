@@ -12,8 +12,9 @@
 #include "eeconfig.h"
 #include "dynamic_keymap.h"
 #include "al80.h"
+#include "al80_logic.h"
 #include <string.h>
-#include "analog.h"
+#include "usb_device_state.h"
 
 /* Set while an LCD transfer (0x40..0x42) is in flight. aw20216s_flush() checks this and
  * skips its SPI writes so they can't preempt the interrupt-driven USART3 TX and put gaps in
@@ -25,45 +26,53 @@ static uint16_t screen_busy_wd = 0;
  * The homepage battery gauge is drawn by the display module but FED by the keyboard: stock sends
  * PK_BATT_QUANTITY (announce type 0x06, one % byte) + PK_BATT_STATUS (0x07, charge state) over
  * USART3. A pure passthrough never sends these, so the gauge reads empty. We read ADC1 ch9 (B1),
- * convert (mv = adc*1764/vref), map to % with b75Pro's piecewise thresholds, and emit the same
- * A5 5A packets the module expects (CRC16-MODBUS over [type,flag,len], identical to al80-studio). */
-#define BATT_OFF 3200
-#define BATT_5   3300
-#define BATT_10  3470
-#define BATT_40  3630
-#define BATT_60  3760
-#define BATT_80  3930
-#define BATT_85  3980
-#define BATT_99  4150
-/* 12-bit VREFINT count on a 3.3V rail (STM32F103, ~1.20V internal ref). CALIBRATABLE: if the
- * reported % reads high, raise this; if low, lower it. */
-#ifndef AL80_VREF_CAL
-#    define AL80_VREF_CAL 1489
-#endif
-/* On-device the ADC read returned 0 (gauge empty). On USB the keyboard is charging/full, so we
- * fall back to a fixed charging+full. Real %% needs debugging why B1/ch9 reads 0. */
-#define AL80_BATT_STATUS 1    /* PK_BATT_STATUS: 1 = charging */
-#define AL80_BATT_FULL   100  /* PK_BATT_QUANTITY fallback */
+ * convert (mv = adc*1764/vref), map to % with b75Pro's piecewise thresholds (al80_logic.h), and emit
+ * the same A5 5A packets the module expects (CRC16-MODBUS over [type,flag,len], as al80-studio). */
+/* USB plug detect (high = cable in). Same pin as the vendor firmware. */
+#define AL80_PLUG_PIN B9
 
-static uint8_t al80_batt_pct(uint16_t mv) {
-    if (mv >= BATT_99) return 100;
-    if (mv <  BATT_OFF) return 0;
-    if (mv <  BATT_5)  return ((mv - BATT_OFF) * 5)  / (BATT_5  - BATT_OFF);
-    if (mv <  BATT_10) return ((mv - BATT_5)  * 5)  / (BATT_10 - BATT_5)  + 5;
-    if (mv <  BATT_40) return ((mv - BATT_10) * 30) / (BATT_40 - BATT_10) + 10;
-    if (mv <  BATT_60) return ((mv - BATT_40) * 20) / (BATT_60 - BATT_40) + 40;
-    if (mv <  BATT_80) return ((mv - BATT_60) * 20) / (BATT_80 - BATT_60) + 60;
-    if (mv <  BATT_85) return ((mv - BATT_80) * 5)  / (BATT_85 - BATT_80) + 80;
-    return ((mv - BATT_85) * 14) / (BATT_99 - BATT_85) + 85;
+/* Last battery sample. raw/vref are kept for the 0x4C diagnostic. */
+static al80_batt_t al80_batt = {0, 0, 0, 100, AL80_BATT_CHARGING, false};
+
+/* ADC1 is driven directly: the cell (ch9 = B1) is measured against the internal
+ * reference (ch17), which needs TSVREFE, and QMK's analog driver clears that bit
+ * on every conversion. */
+static void al80_adc_init(void) {
+    RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+    (void)RCC->APB2ENR;
+    RCC->CFGR = (RCC->CFGR & ~RCC_CFGR_ADCPRE) | RCC_CFGR_ADCPRE_DIV8; /* 9 MHz, under the 14 MHz limit */
+    palSetLineMode(B1, PAL_MODE_INPUT_ANALOG);
+    setPinInput(AL80_PLUG_PIN);
+
+    ADC1->CR1   = 0;
+    ADC1->CR2   = ADC_CR2_ADON | ADC_CR2_TSVREFE | ADC_CR2_EXTTRIG | ADC_CR2_EXTSEL; /* software start */
+    ADC1->SMPR1 = 7u << 21; /* ch17: longest sample time */
+    ADC1->SMPR2 = 7u << 27; /* ch9 */
+    ADC1->SQR1  = 0;        /* one conversion */
+    wait_ms(1);
+    ADC1->CR2 |= ADC_CR2_RSTCAL;
+    for (uint16_t t = 10000; (ADC1->CR2 & ADC_CR2_RSTCAL) && t; t--) {}
+    ADC1->CR2 |= ADC_CR2_CAL;
+    for (uint16_t t = 10000; (ADC1->CR2 & ADC_CR2_CAL) && t; t--) {}
 }
 
-/* Battery %% to report: use the ADC when plausible, else charging/full (USB). The ADC reads 0
- * on-device today, so this returns AL80_BATT_FULL until that's debugged. */
-static uint8_t al80_read_batt_pct(void) {
-    int16_t raw = analogReadPin(B1);
-    if (raw <= 0) return AL80_BATT_FULL;
-    uint8_t pct = al80_batt_pct((uint16_t)(((uint32_t)raw * 1764) / AL80_VREF_CAL));
-    return pct < 10 ? AL80_BATT_FULL : pct;  /* implausibly low on USB = bad read */
+/* Mean of 8 conversions, 0 if the converter never finishes. */
+static uint16_t al80_adc_read(uint8_t channel) {
+    uint32_t sum = 0;
+    ADC1->SQR3 = channel;
+    for (uint8_t i = 0; i < 8; i++) {
+        uint16_t t = 20000;
+        ADC1->CR2 |= ADC_CR2_SWSTART;
+        while (!(ADC1->SR & ADC_SR_EOC) && --t) {}
+        if (!t) return 0;
+        sum += ADC1->DR & 0x0FFF;
+    }
+    return (uint16_t)(sum / 8);
+}
+
+static void al80_batt_sample(void) {
+    const uint16_t raw = al80_adc_read(9);
+    al80_batt          = al80_batt_eval(raw, al80_adc_read(17), readPin(AL80_PLUG_PIN));
 }
 
 /* CRC16-MODBUS (init 0xFFFF, poly 0xA001) — al80-studio's announce checksum "ga". */
@@ -121,11 +130,10 @@ static void al80_panel_req(uint8_t id) {
 /* Read the battery and push PK_BATT_QUANTITY (%) + PK_BATT_STATUS to the module. Caller must
  * ensure no image transfer is in flight (checks g_screen_busy) so the bytes don't interleave. */
 static void al80_battery_push(void) {
-    uint8_t pct = al80_read_batt_pct();
     g_screen_busy = true;                             /* pause RGB SPI so the tiny packets don't jitter */
-    al80_screen_send_u8(0x07, AL80_BATT_STATUS);      /* PK_BATT_STATUS = charging */
+    al80_screen_send_u8(0x07, al80_batt.status);      /* PK_BATT_STATUS */
     wait_us(500);                                     /* let the module commit before the next packet */
-    al80_screen_send_u8(0x06, pct);                   /* PK_BATT_QUANTITY */
+    al80_screen_send_u8(0x06, al80_batt.pct);         /* PK_BATT_QUANTITY */
     wait_us(500);
     g_screen_busy = false;
     screen_busy_wd = 0;
@@ -136,16 +144,20 @@ static void al80_battery_push(void) {
  * initializes its homepage gauges from this batch; a lone battery packet may have no widget to
  * fill. Re-sent periodically so it self-heals after a main-page image push clears the homepage. */
 static void al80_homepage_init(void) {
-    uint8_t  pct  = al80_read_batt_pct();
     uint8_t  leds = host_keyboard_leds();
+#if defined(AL80_WIRELESS_ENABLE)
+    uint8_t  conn = (uint8_t)al80_wireless_mode();   /* 0 USB, 1-3 BT slot, 4 2.4G */
+#else
+    uint8_t  conn = 0;
+#endif
     g_screen_busy = true;
-    al80_screen_send_u8(0x01, 0);               wait_us(500); /* PK_CONN_TYPE   = 0 (USB wired) */
-    al80_screen_send_u8(0x02, 0);               wait_us(500); /* PK_OS_TYPE     = 0 (Windows)   */
+    al80_screen_send_u8(0x01, conn);            wait_us(500); /* PK_CONN_TYPE                   */
+    al80_screen_send_u8(0x02, AL80_OS_TYPE);    wait_us(500); /* PK_OS_TYPE: 0 Windows, 1 Mac   */
     al80_screen_send_u8(0x03, (leds >> 1) & 1); wait_us(500); /* PK_CAPS_STATUS                 */
     al80_screen_send_u8(0x04, leds & 1);        wait_us(500); /* PK_NUMLOCK_STATUS              */
     al80_screen_send_u8(0x05, 0);               wait_us(500); /* PK_WINLOCK_STATUS              */
-    al80_screen_send_u8(0x07, AL80_BATT_STATUS);wait_us(500); /* PK_BATT_STATUS = charging      */
-    al80_screen_send_u8(0x06, pct);             wait_us(500); /* PK_BATT_QUANTITY               */
+    al80_screen_send_u8(0x07, al80_batt.status);wait_us(500); /* PK_BATT_STATUS                 */
+    al80_screen_send_u8(0x06, al80_batt.pct);   wait_us(500); /* PK_BATT_QUANTITY               */
     g_screen_busy = false;
     screen_busy_wd = 0;
 }
@@ -183,6 +195,7 @@ static volatile uint8_t view_request = 0;
  * and/or fires raw_hid_send; it never does a blocking USART3 sdWrite/wait_us in the key path (that
  * was the v24 typing-stall regression -- USART3 work is deferred to housekeeping_task_kb). */
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
+    if (!al80_apple_process(keycode, record)) return false;
     switch (keycode) {
         case AL80_KC_VIEW_HOME:
             if (record->event.pressed) view_request = 0x0B;
@@ -471,6 +484,40 @@ static void al80_lcd_init(void) {
 }
 #endif
 
+/* LCD module power (high = on). */
+#define AL80_LCD_POWER_PIN C9
+
+/* Lights and LCD are off: the host sleeps, or the board sits unused on battery. */
+static bool al80_idle = false;
+
+static bool al80_should_idle(void) {
+#if defined(AL80_WIRELESS_ENABLE)
+    if (al80_wireless_mode() != AL80_WL_USB) {
+        if (al80_wireless_host_suspended()) return last_input_activity_elapsed() > 2000;
+        return !readPin(AL80_PLUG_PIN) && last_input_activity_elapsed() > AL80_IDLE_MS;
+    }
+#endif
+    return usb_device_state_get_configure_state() == USB_DEVICE_STATE_SUSPEND;
+}
+
+/* Returns true while idle, so the caller skips LCD traffic. */
+static bool al80_idle_task(uint8_t *boot_inits) {
+    static uint32_t awake_seen = 0;
+    bool            want       = al80_should_idle();
+    if (!want) {
+        awake_seen = timer_read32();
+    } else if (!al80_idle && timer_elapsed32(awake_seen) < 1000) {
+        want = false; /* a suspend blip during enumeration is not sleep */
+    }
+    if (want != al80_idle) {
+        al80_idle = want;
+        rgb_matrix_set_suspend_state(want);
+        writePin(AL80_LCD_POWER_PIN, !want);
+        if (!want) *boot_inits = 0; /* the module lost its homepage: push it again */
+    }
+    return al80_idle;
+}
+
 /* First byte of the raw-HID report multiplexes: VIA/VialRGB own their own
  * command IDs and never reach here (via.c dispatches those first). Only the
  * three LCD report IDs land in raw_hid_receive_kb. Layout of the report:
@@ -581,6 +628,13 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
          * apart from "we transmitted and it ignored us". */
         case 0x4C:
             al80_wireless_debug(&data[1]);
+            data[52] = (uint8_t)(al80_batt.raw >> 8);  data[53] = (uint8_t)al80_batt.raw;
+            data[54] = (uint8_t)(al80_batt.vref >> 8); data[55] = (uint8_t)al80_batt.vref;
+            data[56] = (uint8_t)(al80_batt.mv >> 8);   data[57] = (uint8_t)al80_batt.mv;
+            data[58] = al80_batt.pct;
+            data[59] = al80_batt.status;
+            data[60] = (uint8_t)((readPin(AL80_PLUG_PIN) ? 0x01 : 0) | (al80_idle ? 0x02 : 0));
+            data[61] = AL80_FW_BUILD;
             break;
 #endif
 
@@ -604,7 +658,19 @@ void housekeeping_task_kb(void) {
     static uint32_t batt_timer = 0;
     static uint32_t init_timer = 0;
     static uint8_t  boot_inits = 0;   /* run the homepage init a few times over the first ~6s */
-    if (!g_screen_busy) {
+    static uint32_t sample_timer = 0;
+    if (!g_screen_busy && timer_elapsed32(sample_timer) > 10000) {
+        sample_timer = timer_read32();
+        al80_batt_sample();
+#if defined(AL80_WIRELESS_ENABLE)
+        static uint8_t radio_batt = 0;
+        if (++radio_batt >= 6) {      /* once a minute is plenty for the host's battery widget */
+            radio_batt = 0;
+            al80_wireless_battery_push(al80_batt.pct);
+        }
+#endif
+    }
+    if (!al80_idle_task(&boot_inits) && !g_screen_busy) {
         if (view_request) {                /* a host-free view key was pressed; flush the announce */
             uint8_t v    = view_request;
             view_request = 0;
@@ -715,7 +781,8 @@ void keyboard_post_init_kb(void) {
     al80_lcd_init();
 #endif
 
-
+    al80_adc_init();
+    al80_batt_sample();
 
     /* Seed the live palette mirror (EEPROM if a valid magic byte is stored,
        else the compiled default without touching flash). */

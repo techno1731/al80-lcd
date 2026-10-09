@@ -29,3 +29,4 @@ firmware/AL80_CUSTOM_QMK_v24_locks.bin
 firmware/AL80_CUSTOM_QMK_v25_locks.bin
 firmware/AL80_CUSTOM_QMK_v26_mutefix.bin
 firmware/AL80_CUSTOM_QMK_v27_eager.bin
+firmware/build/

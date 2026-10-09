@@ -1,0 +1,29 @@
+# Fork status
+
+What this fork changes over upstream v36, and what has been proven. "Built" means it compiles and
+its hardware-free tests pass. Nothing below is verified on a keyboard until the last column says so.
+
+| Area | Change | Built | On hardware |
+|---|---|---|---|
+| Mac | Fn/Globe key reported over USB (Apple IDs, AppleVendor Top Case usage) | yes | no |
+| Mac | Fn is only reported when a host-visible key is pressed with it, so Fn + local keys is not a Globe tap | yes | no |
+| Mac | Function row and Fn navigation substituted in firmware over radio | yes | no |
+| Mac | Dictation, Do Not Disturb and Spotlight keycodes (CUSTOM 32-34) | yes | no |
+| Radio | Link status read as the vendor does (0 = up); upstream had it inverted | yes | no |
+| Radio | Media and system keys sent to the module (`55 03 <id> <usage>`) | yes | no |
+| Radio | Mouse reports sent to the module | yes | no |
+| Radio | Lock LED state from the module drives Caps Lock indication | yes | no |
+| Radio | Mode switch read on C14 (BT) and C15 (2.4G) at a host-less boot | yes | no |
+| Radio | Raw HID (LCD, clock, diagnostics) keeps flowing over USB while typing goes by radio | yes | no |
+| Battery | Cell measured against the internal reference; charging and full detected from plug pin | yes | no |
+| LCD | Homepage shows the real connection type, OS type and battery state | yes | no |
+| Power | Lights and LCD off when the USB host sleeps, the 2.4G host sleeps, or after 5 idle minutes on battery | yes | no |
+
+## Known gaps
+
+- 2.4G with the cable out was dead on upstream. The switch read above is the first fix to try; the
+  cause is not yet confirmed.
+- The MCU does not enter stop mode, so battery life will still trail the stock firmware.
+- Reports are sent whether or not the module says the link is up (`AL80_WL_OPTIMISTIC`), until the
+  corrected link status is confirmed on hardware.
+- The Vial definition does not list the custom keycodes yet.

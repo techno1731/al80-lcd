@@ -9,11 +9,13 @@ OPT_DEFS += -DAL80_LCD_ENABLE
 # instance alongside the LCD's SD3 -- both raw ChibiOS, not QMK's single-
 # instance uart.h wrapper.
 SRC += al80_wireless.c
+
+# Apple Fn/Globe key and Mac function row
+SRC += al80_apple.c
 OPT_DEFS += -DAL80_WIRELESS_ENABLE
 
 # Custom, user-recolorable RGB matrix effect (PALETTE_CYCLE)
 RGB_MATRIX_CUSTOM_KB = yes
-ANALOG_DRIVER_REQUIRED = yes
 DEBOUNCE_TYPE = sym_eager_pk
 
 # The part is physically STM32F103xB (128 KB), proven by a DFU read of

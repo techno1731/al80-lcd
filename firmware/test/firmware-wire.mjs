@@ -39,7 +39,6 @@ export const AP_LIVE_LEDS = 0x49;
 export const ACK_OK = 0x55;
 export const ACK_RANGE = 0x0f;
 
-export const RAW_EPSIZE = 64; // fixed HID report size — the C `length` is always this for 0x49
 
 /** Apply one 0x49 report `data` (Uint8Array/[]) into `buf` (Uint8Array length 246). Returns ack.
  * `length` mirrors the C handler's report length: cnt is bounded by BOTH the destination (off+cnt<=82)

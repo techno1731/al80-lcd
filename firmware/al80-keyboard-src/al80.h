@@ -14,6 +14,7 @@
  * so al80.h stays self-sufficient no matter which TU includes it (al80.c after
  * quantum.h, or rgb_matrix_kb.inc from inside rgb_matrix.c). */
 #include "quantum_keycodes.h"
+#include "action.h"
 
 #ifndef AL80_PALETTE_LEN
 #    define AL80_PALETTE_LEN 3
@@ -48,7 +49,23 @@ enum al80_keycodes {
     AL80_KC_BT3 = QK_KB_0 + 3,                   /* 0x7E03 CUSTOM(3)  -> BLE slot 3 */
     AL80_KC_24G = QK_KB_0 + 4,                   /* 0x7E04 CUSTOM(4)  -> 2.4G dongle */
     AL80_KC_USB = QK_KB_0 + 30,                  /* 0x7E1E CUSTOM(30) -> back to wired */
+
+    /* ---- Apple keys ---- */
+    AL80_KC_APPLE_FN = QK_KB_0 + 31,             /* 0x7E1F CUSTOM(31) -> Globe/Fn + keyboard Fn layer */
+    AL80_KC_DICTATION,                           /* 0x7E20 CUSTOM(32) -> consumer 0x00CF */
+    AL80_KC_DND,                                 /* 0x7E21 CUSTOM(33) -> system 0x009B */
+    AL80_KC_SPOTLIGHT,                           /* 0x7E22 CUSTOM(34) -> consumer 0x0221 */
 };
+
+/* Apple key handling (al80_apple.c). Returns false when the key was consumed. */
+bool al80_apple_process(uint16_t keycode, keyrecord_t *record);
+/* Something other than a key used the Fn layer (the knob), so Fn is not a Globe tap. */
+void al80_apple_fn_used(void);
+
+/* Layer the Apple Fn key holds. */
+#ifndef AL80_FN_LAYER
+#    define AL80_FN_LAYER 1
+#endif
 
 /* ---- wireless (al80_wireless.c) ----
  * Mode values are the module's own 1-based numbering: 1-3 are BLE slots, 4 is
@@ -73,7 +90,9 @@ void           al80_wireless_request(al80_wl_mode_t mode, bool pair);
 void           al80_wireless_battery_push(uint8_t pct);
 al80_wl_mode_t al80_wireless_mode(void);
 bool           al80_wireless_is_connected(void);
-void           al80_wireless_debug(uint8_t *out); /* 10 bytes */
+void           al80_wireless_debug(uint8_t *out); /* 51 bytes */
+bool           al80_wireless_host_suspended(void);
+uint32_t       al80_wireless_last_activity(void);
 #endif
 
 /* One palette entry: HSV hue/sat pair (value comes from user brightness). */

@@ -1,5 +1,17 @@
 # Firmware
 
+## This fork: Mac behaviour and a complete radio driver
+
+Branch `mac-and-wireless` builds on the custom QMK source in `al80-keyboard-src/` and is not yet
+verified on hardware. Status of each change is tracked in `FORK_STATUS.md`.
+
+- **Build:** `./build.sh mac` (Apple Fn/Globe, Mac layout) or `./build.sh vial` (stock USB identity).
+  Runs on macOS and Linux against a pinned vial-qmk commit; the QMK core changes live in
+  `al80-keyboard-src/patches/vial-qmk-core.patch`.
+- **Tests:** `test/run.sh` runs the hardware-free C logic tests and the wire-format tests.
+- **Protocol source:** radio framing, lock LEDs, mode-switch pins and battery sensing follow
+  Yunzii's published source for this board family (`ArgentStonecutter/keyboards`, `yunzii/b75Pro`).
+
 ## ⭐ Custom-QMK versions — KNOWN-GOOD: `AL80_CUSTOM_QMK_v19_rgbfx2.bin`
 
 **v19 is the most-working build so far (marked 2026-07-06).** Flash it if a newer one misbehaves — keys + Vial + clean LCD images + battery + 18 RGB effects, all confirmed. Also copied as `AL80_KNOWN-GOOD_v19.bin` for a quick grab.

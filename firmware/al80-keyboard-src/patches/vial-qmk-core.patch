@@ -1,0 +1,89 @@
+diff --git a/drivers/led/aw20216s.c b/drivers/led/aw20216s.c
+index 704794f5..48742f02 100644
+--- a/drivers/led/aw20216s.c
++++ b/drivers/led/aw20216s.c
+@@ -164,6 +164,8 @@ void aw20216s_update_pwm_buffers(pin_t cs_pin, uint8_t index) {
+ }
+ 
+ void aw20216s_flush(void) {
++    extern volatile bool g_screen_busy;
++    if (g_screen_busy) return; /* AL80: don't jitter the USART3 LCD stream with RGB SPI */
+     aw20216s_update_pwm_buffers(AW20216S_CS_PIN_1, 0);
+ #if defined(AW20216S_CS_PIN_2)
+     aw20216s_update_pwm_buffers(AW20216S_CS_PIN_2, 1);
+diff --git a/quantum/vial.c b/quantum/vial.c
+index 42eb4c5e..faebfc4c 100644
+--- a/quantum/vial.c
++++ b/quantum/vial.c
+@@ -85,7 +85,7 @@ __attribute__((unused)) static uint16_t vial_keycode_firewall(uint16_t in) {
+ 
+ void vial_handle_cmd(uint8_t *msg, uint8_t length) {
+     /* All packets must be fixed 32 bytes */
+-    if (length != VIAL_RAW_EPSIZE)
++    if (length < VIAL_RAW_EPSIZE)
+         return;
+ 
+     /* msg[0] is 0xFE -- prefix vial magic */
+diff --git a/quantum/vialrgb.c b/quantum/vialrgb.c
+index 22ed9751..e2366bda 100644
+--- a/quantum/vialrgb.c
++++ b/quantum/vialrgb.c
+@@ -111,7 +111,7 @@ static void fast_set_leds(uint8_t *args, size_t length) {
+ #endif
+ 
+ void vialrgb_get_value(uint8_t *data, uint8_t length) {
+-    if (length != VIAL_RAW_EPSIZE) return;
++    if (length < VIAL_RAW_EPSIZE) return;
+ 
+     /* data[0] is used by VIA command id */
+     uint8_t cmd = data[1];
+@@ -159,7 +159,7 @@ void vialrgb_get_value(uint8_t *data, uint8_t length) {
+ }
+ 
+ void vialrgb_set_value(uint8_t *data, uint8_t length) {
+-    if (length != VIAL_RAW_EPSIZE) return;
++    if (length < VIAL_RAW_EPSIZE) return;
+ 
+     /* data[0] is used by VIA command id */
+     uint8_t cmd = data[1];
+diff --git a/tmk_core/protocol/usb_descriptor.c b/tmk_core/protocol/usb_descriptor.c
+index ceab9eef..d8b68aa0 100644
+--- a/tmk_core/protocol/usb_descriptor.c
++++ b/tmk_core/protocol/usb_descriptor.c
+@@ -85,10 +85,21 @@ const USB_Descriptor_HIDReport_Datatype_t PROGMEM KeyboardReport[] = {
+         HID_RI_REPORT_COUNT(8, 0x08),
+         HID_RI_REPORT_SIZE(8, 0x01),
+         HID_RI_INPUT(8, HID_IOF_DATA | HID_IOF_VARIABLE | HID_IOF_ABSOLUTE),
++#ifdef APPLE_FN_ENABLE
++        // Apple Fn/Globe (1 byte): AppleVendor Top Case page, KeyboardFn usage
++        HID_RI_USAGE_PAGE(8, 0xFF),
++        HID_RI_USAGE(8, 0x03),
++        HID_RI_LOGICAL_MINIMUM(8, 0x00),
++        HID_RI_LOGICAL_MAXIMUM(8, 0x01),
++        HID_RI_REPORT_COUNT(8, 0x01),
++        HID_RI_REPORT_SIZE(8, 0x08),
++        HID_RI_INPUT(8, HID_IOF_DATA | HID_IOF_VARIABLE | HID_IOF_ABSOLUTE),
++#else
+         // Reserved (1 byte)
+         HID_RI_REPORT_COUNT(8, 0x01),
+         HID_RI_REPORT_SIZE(8, 0x08),
+         HID_RI_INPUT(8, HID_IOF_CONSTANT),
++#endif
+         // Keycodes (6 bytes)
+         HID_RI_USAGE_PAGE(8, 0x07),    // Keyboard/Keypad
+         HID_RI_USAGE_MINIMUM(8, 0x00),
+diff --git a/tmk_core/protocol/usb_descriptor.h b/tmk_core/protocol/usb_descriptor.h
+index 1de8c5ec..628f41ff 100644
+--- a/tmk_core/protocol/usb_descriptor.h
++++ b/tmk_core/protocol/usb_descriptor.h
+@@ -286,7 +286,9 @@ enum usb_endpoints {
+ #define KEYBOARD_EPSIZE 8
+ #define SHARED_EPSIZE 32
+ #define MOUSE_EPSIZE 16
+-#define RAW_EPSIZE 32
++#ifndef RAW_EPSIZE
++#    define RAW_EPSIZE 32
++#endif
+ #define CONSOLE_EPSIZE 32
+ #define MIDI_STREAM_EPSIZE 64
+ #define CDC_NOTIFICATION_EPSIZE 8
