@@ -46,7 +46,8 @@ home page is possible; replacing the screen module's firmware has not been inves
 
 ## Evidence on Hand
 
-- `screen/tide-glow.gif`: the eyes the owner chose on 9 Oct 2026 from four rendered directions (Tide Glow: eyes made of drifting motes of blue light). On the home page strip. The earlier amber `lookout.gif` was rejected.
+- Home page strip: `screen/strips/heartbeat.gif`, a monitor trace, chosen by the owner on 9 Oct 2026 "for now". The owner does not love any of the eye designs (amber Lookout and Tide Glow were both tried and dropped).
+- GIF page: an eight-scene medley the owner likes: digital rain, jellyfish, hyperspace, aurora, synthwave sunset, wake, lava lamp, fireflies (`screen/loops`, `screen/glow`).
 - `tooling/al80_screen.py`: uploads GIFs and pictures; an 8-frame GIF was confirmed animating on
   the device by the owner.
 - No photo of the built-in home page yet, so its arrangement is unknown to the design.
