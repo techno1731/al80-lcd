@@ -12,7 +12,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | Hubs | Enumerates and flashes through a monitor KVM hub (BenQ RD28UG) | yes | yes, build 2 on 9 Oct 2026 |
 | Mac | Fn/Globe key reported over USB (Apple IDs, AppleVendor Top Case usage) | yes | yes: macOS honours it, Fn+Left moves to line start (owner confirmed on build 7, 9 Oct 2026) |
 | Mac | Fn is only reported when a host-visible key is pressed with it, so Fn + local keys is not a Globe tap | yes | a lone tap acts as the Globe key (confirmed); Fn + local keys not triggering it is not yet confirmed |
-| Mac | Function row mapped in firmware on every connection; Fn navigation substituted over radio | yes | function row confirmed on 2.4G; over USB macOS did not map it by itself, so build 7 does it in firmware (not yet confirmed) |
+| Mac | Function row mapped in firmware on every connection; Fn navigation substituted over radio | yes | function row confirmed on 2.4G; over USB macOS did not map it by itself, so build 7 does it in firmware (owner confirmed, 9 Oct 2026) |
 | Mac | Dictation, Do Not Disturb and Spotlight keycodes (CUSTOM 32-34) | yes | no |
 | Radio | Link status read as the vendor does (0 = up); upstream had it inverted | yes | yes: module reported link up on 2.4G, 9 Oct 2026 |
 | Radio | 2.4G dongle: typing works with the cable in, selected by key (owner confirmed 9 Oct 2026) | yes | yes, including with the cable out and from a cold start on the switch (9 Oct 2026); media keys not yet confirmed |
@@ -27,7 +27,7 @@ its hardware-free tests pass. Nothing below is verified on a keyboard until the 
 | LCD | Fn+7 makes the keyboard alternate the home page and the GIF page by itself (20 s / 10 s) | yes | no |
 | LCD tool | `tooling/al80_screen.py`: GIF and picture upload, view switch, clock, under either USB identity | yes | upload of an 8-frame GIF fully acknowledged (9 Oct 2026); picture not yet seen by eye |
 | LCD | Several GIFs uploaded as one medley; the key backlight takes each scene's dominant colour in step with it (raw HID 0x50 stores the scene list) | yes | no |
-| Lighting | Managed solid lighting: white on the home page, the scene colour on the GIF page; right Command + 6 turns LCD and all lights off | yes | no |
+| Lighting | Managed solid lighting: white on the home page, the scene colour on the GIF page; right Command + 6 turns LCD and all lights off | yes | owner reported "all working" on build 7 when asked about these (9 Oct 2026); scene timing against the real GIF speed not measured |
 | Power | Lights and LCD off when the USB host sleeps, the 2.4G host sleeps, or after 5 idle minutes on battery | yes | no |
 
 ## Known gaps
